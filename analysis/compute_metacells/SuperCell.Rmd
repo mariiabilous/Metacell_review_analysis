@@ -1,0 +1,137 @@
+---
+title: "Simplification of a simple scRNA-seq dataset of 5 cancer cell lines from [Tian et al., 2019](https://doi.org/10.1038/s41592-019-0425-8)"
+author: "Mariia Bilous, Aurelie Gabriel, Leonard Herault and David Gfeller"
+output:
+  md_document:
+    toc: true # table of content true
+---
+
+Simplification of a simple scRNA-seq dataset of 5 cancer cell lines from [Tian et al., 2019](https://doi.org/10.1038/s41592-019-0425-8)
+=====================
+
+# Workbook structure
+
+We first run a **standard scRNA-seq data analysis pipeline** (i.e., data normalization, feature selection, dimensionality reduction, visualization, clustering and differential expression analysis) using the [Seurat](https://satijalab.org/seurat/index.html) framework. Then, we **simplify** the same dataset by computing *metacells* (i.e., grouping transcriptionally highly similar single cells into metacells). For this, we will use a method developed in our group called [SuperCell](https://github.com/GfellerLab/SuperCell). We then perform the same **standard downstream analysis** of *metacells* and compare the results to those obtained at the single-cell level. Additionally, we provide code to run sample-weighted downstream analysis that accounts for the metacells size.
+
+We also provide some scripts to build *metacells* using alternative approaches including [Metacell-2](https://metacells.readthedocs.io/en/latest/readme.html) ([script to build metacells with Metacell-2](https://github.com/GfellerLab/SIB_workshop/blob/main/workbooks/Notebook_1_1__MetaCell2.ipynb)) and [SEACell](https://github.com/dpeerlab/SEACells) ([script to build metacells with SEACells](https://github.com/GfellerLab/SIB_workshop/blob/main/workbooks/Notebook_1_2__SEACells.ipynb)). To avoid any issues related to the installation of those packages or data transferring from Python to R, we also provide precomputed results of metacell partition using those two methods (see \ref{Metacell2} and \ref{SEACells})
+
+```{r Install SuperCell, message=FALSE, warning=FALSE}
+#remotes::install_github("GfellerLab/SuperCell", force = TRUE, upgrade = FALSE)
+```
+
+
+```{r Load libraries, message=FALSE, warning=FALSE}
+library(SuperCell)
+library(Seurat)
+library(SeuratData)
+library(SeuratDisk)
+library(dplyr)
+
+```
+
+```{r Load data}
+proj.name    <- c('cell_lines', '3k_pbmc')[2]
+annotation_label <- c('cell_lines' = 'cell_line', '3k_pbmc'='louvain')[proj.name]
+#.color.cell.type <- c("A549" = "#E69F00", "H838" = "#56B4E9", "H1975" = "#009E73", "H2228" = "#F0E442", "HCC827" = "#CC79A7")
+data.folder  <- file.path("../..", "data", proj.name)
+
+# load single-cell (sc) count matrix and cell metadata '
+
+sc.counts <- readRDS(file.path(data.folder, "sc_counts_filtered.Rds"))
+sc.meta   <- readRDS(file.path(data.folder, "sc_meta_filtered.Rds"))
+
+# Make sure metadata and count matrix have the same cells in the same order
+if(!identical(rownames(sc.meta), colnames(sc.counts))){
+  warning("Metadata (`sc.meta`) does not correspond to the count matrix (`sc.counts`)")
+}
+```
+
+# Single-cell level
+
+## Standard downstream analysis
+
+Run a brief analysis at the single-cell level, let's use the common [Seurat](https://satijalab.org/seurat/index.html) pipeline.
+
+```{r}
+set.seed(12345)
+sc <- CreateSeuratObject(counts = sc.counts, project = proj.name, meta.data = sc.meta)
+sc
+```
+
+### Pre-processing
+```{r}
+## load HVG and PCA from Scanpy to be consistent with SEACell and other results
+hvg <- read.csv(file.path(data.folder, "hvg.csv"))$HVG
+
+## PCA
+pca <- read.csv(file.path(data.folder, "pca.csv"), header = TRUE)
+pca <- pca[,-1]
+rownames(pca) <- rownames(sc@meta.data)
+pca <- as.matrix(pca)
+```
+
+
+```{r pre-processing}
+sc <-  NormalizeData(sc, verbose=FALSE) %>% FindVariableFeatures(selection.method = "disp", nfeatures = 1000, verbose=FALSE) 
+VariableFeatures(sc, verbose=FALSE) <- hvg
+
+sc <- ScaleData(sc, verbose=FALSE) 
+sc <- RunPCA(sc, verbose=FALSE)
+## here replace PCA with one from Scanpy!!!
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# Plot PCA (2D representation of scRNA-seq data) colored by cell line
+DimPlot(sc, reduction = "pca", group.by = annotation_label)
+```
+
+### UMAP (non-linear dimensionality reduction)
+
+```{r UMAP, message=FALSE, warning=FALSE}
+sc <- RunUMAP(sc,  dims = 1:10)
+
+# Plot UMAP (2D representation of scRNA-seq data) colored by cell line
+DimPlot(sc, reduction = "umap", group.by = annotation_label)
+```
+```{r}
+sc@reductions$pca@cell.embeddings[1:5,1:10]
+```
+```{r}
+pca[1:5, 1:10]
+```
+
+# Data simplification (coarse-graining) -- Construction of *metacells*
+
+Here we compute metacells using our method called [SuperCell](https://github.com/GfellerLab/SuperCell), but equally, metacells can be computed with [Metacell](https://github.com/tanaylab/metacell), [Metacell-2](https://metacells.readthedocs.io/en/latest/readme.html) or [SEACell](https://github.com/dpeerlab/SEACells) algorithms and we will see some examples below.
+
+```{r run-supercell}
+I <- 1
+
+for(I in c(3)){
+   # Graining level
+  gamma <- c(10, 20, 30, 50, 75, 100)[I]
+  # Compute metacells using SuperCell package
+  MC <- SCimplify_from_embedding(
+    X = pca, #GetAssayData(sc), # single-cell log-normalized gene expression data
+    gamma = gamma,
+    n.pc = 10
+  )
+  
+  membership <- MC$membership
+  
+  write.csv(membership, file = file.path(data.folder, "output", paste0("supercell_gamma_", gamma, "_membership.csv")))
+}
+```
+
+
+
+```{r Sessioninfo, echo=FALSE}
+if(FALSE){
+sessioninfo::session_info()%>%
+  details::details(
+    summary = 'Current session info',
+    open    = TRUE
+  )
+}
+```

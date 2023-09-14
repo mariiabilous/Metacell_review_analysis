@@ -1,0 +1,412 @@
+---
+title: "Metacells_QC_3k_pbmc"
+author: "Mariia Bilous"
+date: "2023-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Metacells computed in Py or R depending on MC_tool.
+QC metric computed in Py due to diffusion component requted for SEACell compactness and separation scores.
+
+Here I do the analysis of correlations among metrics.
+
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+```
+
+```{r params}
+proj_name <- "3k_pbmc"
+
+## plots
+p.size <- 1
+font.size <- 2
+```
+
+
+```{r}
+all_methods <- c("MetaCell", "supercell", "mc2", "seacells", "msPHATE", "kmeans", "bins")
+methods <- c("mc2", "seacells", "supercell", "kmeans")
+gammas <- c(10, 20, 30,  50, 75, 100)
+gamma_to_use <- 30
+annotation_label <- "louvain"
+```
+
+```{r load-data}
+obs <- data.frame()
+QC  <- data.frame()
+
+cnames <- c("membership", "gamma", "gamma_obtained", "MC_tool", "size", annotation_label, paste0(annotation_label,"_purity"), "Compactness_PCA", "Compactness_DC", "Separation_PCA", "Separation_DC", "INV_5", "INV_50", "INV_95")
+
+for(meth in methods){
+	for(gamma_i in gammas){
+		
+		## obs
+		filename <- file.path("../../data", proj_name, "output", paste(meth, "gamma", gamma_i, "metacell_obs.csv" , sep = "_"))
+		print(filename)
+		
+		if(file.exists(filename)){
+			cur <- read.csv(filename, header = T)
+			obs <- rbind(obs, cur[,cnames])
+		} else {
+			warning(paste(filename, "does not exist"))
+		}
+		
+		## QC 
+		
+		filename <- file.path("../../data", proj_name, "output", paste(meth, "gamma", gamma_i, "QC.csv" , sep = "_"))
+		print(filename)
+		
+		if(file.exists(filename)){
+			cur <- read.csv(filename, header = T)
+			QC <- rbind(QC, cur)
+		} else {
+			warning(paste(filename, "does not exist"))
+		}
+		
+	}
+}
+
+obs
+
+```
+
+
+```{r}
+df <- obs %>% filter(Compactness_PCA < 1)
+p <- ggplot(df, aes(x = Compactness_PCA, y = louvain_purity,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5, size = p.size) +
+	facet_grid(MC_tool ~ gamma, scale = "free_x") +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm',  color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = font.size)
+
+```
+
+
+```{r}
+df <- obs %>% filter(Compactness_PCA < 1 )
+p <- ggplot(df, aes(x = Compactness_PCA, y = Separation_PCA,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5, size = p.size) +
+	facet_grid(MC_tool ~ gamma) + #, scale = "free_x"
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm',  color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = font.size)
+```
+```{r}
+df <- obs %>% filter(gamma == gamma_to_use, MC_tool != "Kmeans")
+
+#df <- df %>% filter(Separation_DC < , Compactness_DC < , MC_tool == "MC2")
+
+p <- ggplot(df, aes(x = Compactness_DC, y = Separation_DC,  color = louvain)) + #, , size = size
+	geom_point(alpha = 0.95, size = p.size) +
+	facet_grid(~MC_tool, scale = "free") +
+	scale_x_log10() +
+	scale_y_log10() +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm',  color = "black")
+p <- p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = font.size)
+p
+p +	scale_y_log10() 
+```
+## Supplementary Fig. 1c
+```{r}
+w <- 2.5
+h <- 2.5
+p.size <- 1
+font.size <- 4
+
+plot_folder <- file.path("plots", "3k_pbmc")
+
+if(!dir.exists(plot_folder)) dir.create(plot_folder, recursive = T)
+
+df <- obs %>% filter(gamma == gamma_to_use, MC_tool != "Kmeans")
+for(meth in unique(df$MC_tool)){
+	p <- df %>% filter(MC_tool == meth) %>%
+	ggplot(aes(x = Compactness_DC, y = Separation_DC)) + #, , size = size
+		geom_point(alpha = 0.85, size = p.size) +
+		facet_grid(~MC_tool, scale = "free") +
+		theme_bw() +
+		theme(asp = 1, panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+		geom_smooth(method='lm',  color = "black")
+	
+	p <- p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = font.size)
+	
+	p <- p +	scale_x_log10() +	scale_y_log10() 
+	ggsave(filename = file.path("plots", "3k_pbmc", paste0("Compactness_Separation_DC_", meth, "_gamma_", gamma_to_use, "_logxy.pdf")), width = w, height = h)
+	
+}
+```
+
+
+
+```{r}
+df <- obs %>% filter(gamma == gamma_to_use, MC_tool != "Kmeans")
+p <- ggplot(df, aes(x = -Compactness_PCA, y = Separation_PCA,  color = MC_tool)) + #, , size = size
+	geom_point(alpha = 0.95, size = p.size) +
+#	facet_grid(~MC_tool, scale = "free") +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm')
+p <- p + ggpubr::stat_cor(aes(color = MC_tool), method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, size = font.size+3)
+p
+p +	scale_y_log10() 
+```
+
+```{r}
+df <- obs %>% filter(Compactness_DC<2 & Separation_DC<5)
+p <- ggplot(df, aes(x = Compactness_DC, y = Separation_DC,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5, size = p.size) +
+#	scale_x_log10() +
+#	scale_y_log10() +
+	facet_grid(MC_tool ~ gamma, scale = "free_x") +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = font.size)
+
+```
+
+```{r}
+df <- obs %>% filter(Compactness_PCA < 2 & INV_95 < 100 & Compactness_DC < 1)
+
+p <- ggplot(df, aes(x = Compactness_PCA, y = INV_95,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	scale_y_log10() +
+	facet_grid(MC_tool ~ gamma, scale = "free_x") +
+	theme_bw() +
+	theme(asp = 1, axis.text = element_text(size = 7)) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2)
+
+
+p <- ggplot(df, aes(x = Compactness_DC, y = INV_95,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	scale_y_log10() +
+#	scale_x_log10() +
+	facet_grid(MC_tool ~ gamma, scale = "free_x") +
+	theme_bw() +
+	theme(asp = 1, axis.text = element_text(size = 7)) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2)
+
+```
+## MC size effect 
+
+```{r}
+
+## Compactness PCA
+df <- obs #%>% filter(Compactness_PCA<6)
+
+p <- ggplot(df, aes(y = Compactness_PCA, x = size,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	scale_y_log10() +
+	facet_grid(MC_tool ~ gamma, scale = "free_x") +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm',color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2)
+
+```
+
+```{r}
+## Compactness DC
+df <- obs %>% filter(Compactness_DC<500 & size < 400)
+
+p <- ggplot(df, aes(y = Compactness_DC, x = size,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	scale_y_log10() +
+	facet_grid(MC_tool ~ gamma, scale = "free_x") +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2.5, output.type = "text")
+
+df %>%
+  group_by(MC_tool,gamma) %>%
+  summarize(cor=cor(log10(Compactness_DC), size), pval = cor.test(log10(Compactness_DC), size)[['p.value']])
+
+```
+
+```{r}
+
+## Separation PCA
+df <- obs  %>% filter(size < 400)
+
+p <- ggplot(df, aes(y = Separation_PCA, x = size,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	#scale_x_log10() +
+	facet_grid(MC_tool ~ gamma, scales = "free_x" ) +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2)
+
+```
+
+
+```{r}
+## Separation DC
+df <- obs  %>% filter(size<400)
+
+p <- ggplot(df, aes(y = Separation_DC, x = size,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	scale_y_log10() +
+	facet_grid(MC_tool ~ gamma, scales = "free_x" ) +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2)
+
+```
+```{r}
+## INV
+df <- obs   %>% filter(size<400)
+
+p <- ggplot(df, aes(y = INV_95, x = size,  color = MC_tool)) + #size = size,
+	geom_point(alpha = 0.5) +
+	#scale_y_log10() +
+	facet_grid(MC_tool ~ gamma, scales = "free_x" ) +
+	theme_bw() +
+	theme(asp = 1) +
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, color = "black", size = 2)
+
+```
+
+
+
+# Compactness and Separation across a range of nPCs
+```{r load-data}
+
+QC  <- data.frame()
+
+
+for(meth in methods){
+	for(gamma_i in gammas){
+		
+		filename <- file.path("../../data", proj_name, "output", paste(meth, "gamma", gamma_i, "QC.csv" , sep = "_"))
+		print(filename)
+		
+		if(file.exists(filename)){
+			cur <- read.csv(filename, header = T)
+			QC <- rbind(QC, cur)
+		} else {
+			warning(paste(filename, "does not exist"))
+		}
+		
+	}
+}
+
+QC
+```
+
+```{r, fig.height=5}
+df <- QC %>% filter(n_comp == 10 )#& (( compactness < 6 & low_dim_embedding == "X_pca") | ( compactness < 500 & low_dim_embedding == "DC")))#(low_dim_embedding == "X_pca")
+p <- ggplot(df, aes(y = compactness, x = MC_tool,  color = MC_tool)) + #size = size,
+	geom_boxplot(outlier.size = 0.5) +
+	labs(x = NULL) +
+	scale_y_log10() + 
+#	coord_cartesian(ylim = quantile(QC$compactness, c(0.05, 0.95),na.rm = TRUE))+
+	facet_grid(low_dim_embedding ~ gamma, scales = "free_y" ) +
+	theme_bw() +
+	theme(asp = 0.75)
+
+p + ggpubr::stat_compare_means(label = "p.signif", comparisons = list(c("SuperCell","SEACell"), c("Kmeans","SEACell"), c("MC2","SEACell")))
+
+
+p <- ggplot(df, aes(y = separation, x = MC_tool,  color = MC_tool)) + #size = size,
+	geom_boxplot(outlier.size = 0.5) +
+	labs(x = NULL) +
+	scale_y_log10() + 
+#	coord_cartesian(ylim = quantile(QC$compactness, c(0.05, 0.95),na.rm = TRUE))+
+	facet_grid(low_dim_embedding ~ gamma, scales = "free_y" ) +
+	theme_bw() +
+	theme(asp = 0.75)
+
+p + ggpubr::stat_compare_means(label = "p.signif", comparisons = list(c("SuperCell","SEACell"), c("Kmeans","SEACell"), c("MC2","SEACell")))
+
+
+```
+
+```{r}
+lde <- c('X_pca', 'DC')[1]
+df <- QC %>% filter(MC_tool != 'Kmeans', low_dim_embedding == lde, n_comp > 5, n_comp < 21, compactness < 1, gamma > 10)
+
+score <- c('compactness', 'separation')[1]
+df$score_ <- df[,score]
+df %>% ggplot(aes(x = factor(n_comp), y = score_)) +
+	geom_boxplot(outlier.size = 0.) +
+	facet_grid( MC_tool ~ gamma ) +
+	scale_y_log10()
+
+
+```
+## Supplementary Fig. 1a,b
+```{r}
+lde <- c('X_pca', 'DC')[2]
+gamma_i <- 30
+df <- QC %>% filter(MC_tool != 'Kmeans', low_dim_embedding == lde, n_comp >= 6, n_comp <= 24, gamma == gamma_i)#, separation < 0.1) #, compactness < 0.4)# , #separation < 5
+
+suf <- "log_xy" #"rem_outliers"
+
+score <- c('compactness', 'separation')[2]
+df$score_ <- df[,score]
+p <- df %>% ggplot(aes(x = factor(n_comp), y = score_)) +
+	geom_boxplot(outlier.size = 0.) +
+#	geom_line(aes(group = membership, color = factor(membership))) +
+	facet_grid(  ~ MC_tool ) +
+	labs(x = 'N PCs', y = score)+
+	scale_y_log10() +
+	theme_bw() +
+	theme(legend.position = 'none', panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), asp = 0.8)
+
+ggsave(filename = file.path('plots', proj_name, paste(score, 'over_pr_comp_gamma', gamma_i, 'ls', lde, suf, '.pdf', sep = '_')))
+
+p <- p + geom_point(aes(color = factor(membership)), size = 0.5) 
+
+ggsave(filename = file.path('plots', proj_name, paste(score, 'over_pr_comp_gamma', gamma_i, 'ls', lde, 'col_dot', suf, '.pdf', sep = '_')))
+
+p <- p + geom_line(aes(group = membership, color = factor(membership)))
+
+ggsave(filename = file.path('plots', proj_name, paste(score, 'over_pr_comp_gamma', gamma_i, 'ls', lde, 'col_dot_line', suf, '.pdf', sep = '_')))
+```
+
+
+
+```{r}
+df <- obs
+p <- ggplot(df, aes(y = INV_95, x = MC_tool,  color = MC_tool)) + #size = size,
+	geom_boxplot(outlier.size = 0.5) +
+	labs(x = NULL) +
+	scale_y_log10() + 
+#	coord_cartesian(ylim = quantile(QC$compactness, c(0.05, 0.95),na.rm = TRUE))+
+	facet_grid( ~ gamma, scales = "free_y" ) +
+	theme_bw() +
+	theme(asp = 0.75, axis.text.x = element_text(angle = 90))
+
+p + ggpubr::stat_compare_means(label = "p.signif", comparisons = list(c("SuperCell","MC2"), c("MC2","Kmeans"), c("MC2","SEACell")))
+
+```
+```{r}
+df <- obs
+p <- ggplot(df, aes(y = louvain_purity, x = MC_tool,  color = MC_tool)) + #size = size,
+	geom_boxplot(outlier.size = 0.5) +
+	labs(x = NULL) +
+	scale_y_log10() + 
+#	coord_cartesian(ylim = quantile(QC$compactness, c(0.05, 0.95),na.rm = TRUE))+
+	facet_grid( ~ gamma, scales = "free_y" ) +
+	theme_bw() +
+	theme(asp = 0.75, axis.text.x = element_text(angle = 90))
+
+#p + ggpubr::stat_compare_means(label = "p.signif", comparisons = list(c("SuperCell","MC2"), c("MC2","Kmeans"), c("MC2","SEACell")))
+p
+```
+

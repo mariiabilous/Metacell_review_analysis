@@ -1,0 +1,127 @@
+---
+title: "Illustration of datastes of different complexity (T cells and lung)"
+author: "Mariia Bilous"
+date: "2023-08-18"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Generate UMAPs and tSNEs of public datasets of different size and complexity
+
+```{r}
+library(Seurat)
+library(SeuratData)
+library(dplyr)
+```
+
+Parameters 
+```{r}
+N <- 5000 #number of cells to keep (to have the same number of cells in datasets of different complexity)
+
+w <- 5 # figures size for saving .pdf
+h <- 5 # figures size for saving .pdf
+```
+
+
+Get available datasets 
+```{r}
+available <- AvailableData()
+available
+```
+
+# Bone marrow dataset (Not used in its full size, only a subset of T cells used in figure)
+```{r bomemarrow dataset}
+InstallData("bmcite")
+seurat.bm <- bmcite
+```
+
+
+Standard pre-processing
+```{r}
+meta <- seurat.bm@meta.data
+
+seurat.bm <- CreateSeuratObject(seurat.bm@assays$RNA@counts)
+seurat.bm@meta.data <- meta
+seurat.bm <- NormalizeData(seurat.bm)
+seurat.bm <- FindVariableFeatures(seurat.bm)
+seurat.bm <- ScaleData(seurat.bm)
+seurat.bm <- RunPCA(seurat.bm)
+seurat.bm <- FindNeighbors(seurat.bm)
+seurat.bm <- RunUMAP(seurat.bm, dims = 1:10)
+
+seurat.bm <- FindClusters(seurat.bm, resolution = 0.3)
+
+p <- UMAPPlot(seurat.bm) 
+
+p <- p + ggplot2::theme(asp = 1)
+p
+ggplot2::ggsave(filename = "plots/bownmarrow_UMAP_entire.pdf", width = w, height = h)
+
+```
+
+
+# Simple dataset -- T cells 
+Standard pre-processing
+```{r}
+set.seed(1)
+tcells.ids <- Cells(seurat.bm)[seurat.bm$celltype.l1 == 'T cell' & !(seurat.bm$celltype.l2 %in% c('gdT', 'MAIT', 'Treg'))]
+
+
+seurat.tcells <- subset(x = seurat.bm,  cells=tcells.ids)
+
+seurat.tcells <- FindVariableFeatures(seurat.tcells, nfeatures = 2000)
+seurat.tcells <- ScaleData(seurat.tcells)
+seurat.tcells <- RunPCA(seurat.tcells)
+seurat.tcells <- FindNeighbors(seurat.tcells)
+seurat.tcells <- FindClusters(seurat.tcells, resolution = 0.1)
+seurat.tcells <- RunUMAP(seurat.tcells, dims = 1:5)
+
+
+p <- UMAPPlot(seurat.tcells) #, group.by = 'celltype.l2'
+p <- p + ggplot2::theme(asp = 1)
+p
+
+ggplot2::ggsave(filename = "plots/Tcells_UMAP.pdf", width = w, height = h)
+
+```
+
+# Complex dataset --  Lung
+```{r}
+# get data from https://seurat.nygenome.org/hlca_ref_files/ts_opt.rds 
+
+seurat.lung <- readRDS(file.path('data', 'ts_opt.Rds'))
+N.lung <- nrow(seurat.lung@meta.data)
+
+seurat.lung <- CreateSeuratObject(counts = seurat.lung@assays$RNA@counts)
+
+seurat.lung <- NormalizeData(seurat.lung)
+seurat.lung <- FindVariableFeatures(seurat.lung)
+seurat.lung <- ScaleData(seurat.lung)
+seurat.lung <- RunPCA(seurat.lung, features = VariableFeatures(object = seurat.lung))
+seurat.lung <- RunUMAP(seurat.lung, dims = 1:20, min.dist = 0.5, spred = 0.5)
+
+seurat.lung <- FindNeighbors(seurat.lung)
+seurat.lung <- FindClusters(seurat.lung, res = 0.2)
+
+p <- UMAPPlot(seurat.lung)
+p <- p + ggplot2::theme(asp=1)
+p
+
+ggplot2::ggsave(filename = "plots/lung_UMAP.pdf", width = w, height = h)
+
+set.seed(1)
+idx <- Cells(seurat.lung)[sample(1:N.lung, N, replace = FALSE)]
+
+seurat.lung.ss <- subset(x = seurat.lung, cells = idx)
+
+p <- UMAPPlot(seurat.lung.ss)
+p <- p + ggplot2::theme(asp=1)
+p
+ggplot2::ggsave(filename = "plots/lung_UMAP_ss.pdf", width = w, height = h)
+
+
+
+```
+

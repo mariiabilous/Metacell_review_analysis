@@ -1,0 +1,318 @@
+---
+title: "scheme"
+author: "Mariia Bilous"
+date: "2023-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(Seurat)
+library(SeuratData)
+library(SuperCell)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+w <- 5
+h <- 5
+```
+
+```{r}
+AvailableData()
+```
+
+```{r}
+InstallData("pbmc3k")
+```
+
+```{r}
+data("pbmc3k")
+```
+
+```{r}
+pbmc3k.final <- pbmc3k
+  pbmc3k.final[['percent.mt']] <- PercentageFeatureSet(pbmc3k.final, pattern = '^MT-')
+  pbmc3k.final <- subset(x = pbmc3k.final, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+  pbmc3k.final <- NormalizeData(pbmc3k.final)
+  pbmc3k.final <- FindVariableFeatures(pbmc3k.final)
+  pbmc3k.final <- ScaleData(pbmc3k.final, features = rownames(pbmc3k.final))
+  pbmc3k.final <- RunPCA(pbmc3k.final, features = VariableFeatures(pbmc3k.final))
+  
+  pbmc3k.final <- FindNeighbors(pbmc3k.final, dims = 1:10)
+  pbmc3k.final <- FindClusters(pbmc3k.final, resolution = 0.5)
+  pbmc3k.final <- RunUMAP(pbmc3k.final, dims = 1:10)
+  pbmc3k.final <- RunTSNE(pbmc3k.final, dims = 1:10)
+  new.cluster.ids <- c("Naive CD4 T", "Memory CD4 T", "CD14+ Mono", "B", "CD8 T", "FCGR3A+ Mono", "NK", "DC", "Platelet")
+  names(new.cluster.ids) <- levels(pbmc3k.final)
+  pbmc3k.final <- RenameIdents(pbmc3k.final, new.cluster.ids)
+
+```
+
+
+Density plot (Fig. 3f)
+
+```{r}
+df.tsne <- data.frame(pbmc3k.final@reductions$tsne@cell.embeddings)
+
+p <- df.tsne %>% ggplot(aes(x = tSNE_1, y = tSNE_2)) + ggpointdensity::geom_pointdensity(adjust = 10) +
+	scale_color_gradient2(midpoint = 75, low = "#41A0D6", high = "#C81D25", mid = "gray") +
+	theme_classic() + 
+	theme(asp =1)
+p
+
+ggsave(filename = file.path("./plots/density_tSNE_3k_pbmcs.pdf"), width = w, height = h)
+```
+
+Plot downsampled PCA (Fig.5)
+```{r}
+set.seed(12345)
+gamma <- 10
+N_cells <- nrow(pbmc3k.final@meta.data)
+N_MC <- round(N_cells/gamma)
+subsampled.ids <- sample(Cells(pbmc3k.final), N_MC, replace = FALSE)
+subsampled.ids <- c(subsampled.ids,
+										Cells(pbmc3k.final)[pbmc3k.final$seurat_annotations == 'Platelet'][1:2],
+										Cells(pbmc3k.final)[pbmc3k.final$seurat_annotations == 'DC'][1:2])
+```
+
+
+```{r}
+pbmc3k.final.subsampled <- subset(x = pbmc3k.final,  cells=subsampled.ids )
+levels(pbmc3k.final.subsampled) <- new.cluster.ids
+ncol(pbmc3k.final.subsampled)
+TSNEPlot(pbmc3k.final.subsampled) + theme(asp=1)
+table(Idents(pbmc3k.final.subsampled))
+
+ggsave(file = paste0("./plots/tSNE_3k_pbmcs_subsampling_gamma_", gamma, ".pdf"), width = 5, height = 5)
+
+```
+
+Weighted vs non-weighted PCA (Fig. 4c)
+```{r}
+MC <- SCimplify_from_embedding(X = pbmc3k.final@reductions$pca@cell.embeddings[,1:10], gamma = gamma)
+pbmc3k.final.MC <- pbmc3k.final
+
+
+pbmc3k.final.MC$membership <- MC$membership
+
+Idents(pbmc3k.final.MC) <- "membership"
+pbmc3k.final.MC <- AverageExpression(pbmc3k.final.MC, return.seurat = TRUE)
+pbmc3k.final.MC$cell_type <- SuperCell::supercell_assign(Idents(pbmc3k.final), MC$membership)
+Idents(pbmc3k.final.MC) <- "cell_type"
+
+pbmc3k.final.MC <- RunPCA(pbmc3k.final.MC, features = VariableFeatures(pbmc3k.final))
+
+df.pca.unweighted <- data.frame(pbmc3k.final.MC@reductions$pca@cell.embeddings[,1:5], 
+																cell_type = pbmc3k.final.MC$cell_type, 
+																size = MC$supercell_size)
+
+df.pca.unweighted <- df.pca.unweighted %>% 
+	mutate(cell_type=factor(cell_type, levels=new.cluster.ids))
+
+p <- df.pca.unweighted %>% ggplot(aes(x = PC_3, y = PC_1, color = cell_type, size = size)) +
+	geom_point(alpha = 0.7) +
+	theme_classic() +
+	theme(asp=1)
+p
+
+ggsave(filename = file.path('plots', 'unweighted_PCA_3kpbmcs.pdf'), width = w, height = h)
+
+pca.weighted <- supercell_prcomp(t(pbmc3k.final.MC@assays$RNA@data), genes.use = VariableFeatures(pbmc3k.final), supercell_size = MC$supercell_size, k = 50)
+
+df.pca.weighted <- data.frame(pca.weighted$x[,1:5], 
+																cell_type = pbmc3k.final.MC$cell_type, 
+																size = MC$supercell_size)
+
+df.pca.weighted <- df.pca.weighted %>% 
+	mutate(cell_type=factor(cell_type, levels=new.cluster.ids))
+
+p <- df.pca.weighted %>% ggplot(aes(x = X3, y = X1, color = cell_type, size = size)) +
+	geom_point(alpha = 0.7) +
+	theme_classic() +
+	theme(asp=1)
+p
+ggsave(filename = file.path('plots', 'weighted_PCA_3kpbmcs.pdf'), width = w, height = h)
+
+```
+
+```{r}
+pbmc3k.final.MC@reductions$wpca <- pbmc3k.final.MC@reductions$pca
+
+pbmc3k.final.MC@reductions$wpca@cell.embeddings <- pca.weighted$x
+colnames(pbmc3k.final.MC@reductions$wpca@cell.embeddings) <- colnames(pbmc3k.final.MC@reductions$pca@cell.embeddings)
+
+pbmc3k.final.MC <- RunUMAP(pbmc3k.final.MC, reduction = 'pca', dims = 1:10, reduction.name = 'unwUMAP', reduction.key = "unwumap_")
+pbmc3k.final.MC <- RunUMAP(pbmc3k.final.MC, reduction = 'wpca', dims = 1:10, reduction.name = 'wUMAP', reduction.key = "wumap_")
+
+
+df.tsne.weighted <- data.frame(pbmc3k.final.MC@reductions$wUMAP@cell.embeddings[,1:2],
+																cell_type = pbmc3k.final.MC$cell_type, 
+																size = MC$supercell_size) %>% 
+	mutate(cell_type=factor(cell_type, levels=new.cluster.ids))
+
+df.tsne.unweighted <- data.frame(pbmc3k.final.MC@reductions$unwUMAP@cell.embeddings[,1:2],
+																cell_type = pbmc3k.final.MC$cell_type, 
+																size = MC$supercell_size) %>% 
+	mutate(cell_type=factor(cell_type, levels=new.cluster.ids))
+
+
+p <- df.tsne.weighted %>% ggplot(aes(x = wumap_1, y = wumap_2, color = cell_type, size = size)) +
+	geom_point(alpha = 0.7) +
+	theme_classic() +
+	theme(asp=1)
+p
+ggsave(filename = file.path('plots', 'weighted_UMAP_3kpbmcs.pdf'), width = w, height = h)
+
+
+p <- df.tsne.unweighted %>% ggplot(aes(x = unwumap_1, y = unwumap_2, color = cell_type, size = size)) +
+	geom_point(alpha = 0.7) +
+	theme_classic() +
+	theme(asp=1)
+p
+ggsave(filename = file.path('plots', 'unweighted_UMAP_3kpbmcs.pdf'), width = w, height = h)
+
+```
+
+Metacell level representation (Fig. 2a, Fig. 5)
+```{r}
+MC_tsne <- as.matrix(t(as.matrix(SuperCell::supercell_GE(t(pbmc3k.final@reductions$tsne@cell.embeddings), MC$membership ))))[order(order(unique(MC$membership))),]
+
+rownames(MC_tsne) <- as.character(unique(MC$membership))
+
+
+df <- data.frame(MC_tsne, cell_type = pbmc3k.final.MC$cell_type, size = MC$supercell_size)
+
+p <- df %>% 
+	mutate(cell_type=factor(cell_type, levels=new.cluster.ids)) %>%
+ggplot(aes(x = tSNE_1, y = tSNE_2)) +
+	geom_point(aes(size = size, color = cell_type), alpha = 0.7) +
+	scale_size(range = c(1,1)) +
+	theme_classic() + theme(asp=1)
+ggsave(file = paste0("./plots/tSNE_3k_pbmcs_gamma_", gamma, ".pdf"), width = 5, height = 5)
+
+
+```
+
+tSNE of cell type (clusters)
+```{r}
+cluster_tsne <- as.matrix(t(as.matrix(SuperCell::supercell_GE(t(pbmc3k.final@reductions$tsne@cell.embeddings), as.numeric(pbmc3k.final$seurat_clusters)))))
+
+
+df <- data.frame(cluster_tsne, cell_type = levels(pbmc3k.final$seurat_annotations), size = as.numeric(table(pbmc3k.final$seurat_clusters )))
+
+p <- df %>% 
+	mutate(cell_type=factor(cell_type, levels=new.cluster.ids)) %>%
+ggplot(aes(x = tSNE_1, y = tSNE_2)) +
+	geom_point(aes(size = size, color = cell_type), alpha = 0.7) +
+	scale_size(range = c(5, 18)) +
+	theme_classic() + theme(asp=1) +
+	scale_x_continuous(limits = c(-40,40)) +
+	scale_y_continuous(limits = c(-30,30))
+p
+ggsave(file = paste0("./plots/tSNE_3k_pbmcs_clusters.pdf"), width = 5, height = 5)
+
+```
+
+Metacell size and number of detected genes (Fig. 6b)
+```{r}
+# Correlation between metacell size and # of detected genes
+ngenes <- colSums(pbmc3k.final.MC@assays$RNA@data>0)
+plot(y = ngenes[order((as.numeric(names(ngenes))))], x = MC$supercell_size)
+
+df.ngenes.MCsize <- data.frame(x = MC$supercell_size, y = ngenes[order((as.numeric(names(ngenes))))])
+
+p <- ggplot(df.ngenes.MCsize, aes(y = y, x = x)) +
+	geom_point(alpha = 0.5) +
+	theme_bw() +
+	theme(asp = 1, panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	labs(x = 'MC size', y = '# detected genes')+
+	geom_smooth(method='lm', color = "black")
+p + ggpubr::stat_cor(method="pearson", size = 2)
+ggsave("./plots/correlation_MCsize_Ngenes.pdf", width =3, height = 3)
+```
+
+Weighted vs non-weighted clustering (Fig. 4c)
+```{r}
+# build kNN graph from MC 
+library(igraph)
+
+nn2 <- RANN::nn2(data = pbmc3k.final.MC@reductions$pca@cell.embeddings[,1:10], k = 50)
+nn.idx <- nn2$nn.idx[,-1]
+
+adj.knn       <- split(nn.idx, rep(1:nrow(nn.idx), times = ncol(nn.idx))) # get adj list
+adj.knn       <- lapply(adj.knn, function(x){x[!is.na(x)]}) # remove NA
+
+
+gr   <- graph_from_adj_list(adj.knn, mode = 'all')
+
+adjm <- get.adjacency(gr)
+adjm_w <- as.matrix(adjm)
+diag(adjm_w) <- MC$supercell_size
+gr_w <- graph_from_adjacency_matrix(adjm_w, weighted = TRUE, mode = 'undirected')
+plot(gr)
+plot(gr_w)
+
+set.seed(1)
+nonw_louvain <- cluster_louvain(gr, resolution = 1.2)
+w_louvain <- cluster_louvain(gr_w, resolution = 1)
+
+table(nonw_louvain$membership, w_louvain$membership)
+
+nonw_louvain_membership <- rep(NA, length(nonw_louvain$membership))
+nonw_louvain_membership[nonw_louvain$membership == 3] <- 1
+nonw_louvain_membership[nonw_louvain$membership == 4] <- 3
+nonw_louvain_membership[nonw_louvain$membership == 2] <- 2
+nonw_louvain_membership[nonw_louvain$membership == 5] <- 4
+nonw_louvain_membership[nonw_louvain$membership == 6] <- 5
+nonw_louvain_membership[nonw_louvain$membership == 1] <- 6
+table(nonw_louvain_membership, w_louvain$membership)
+
+
+
+## leiden 
+set.seed(1)
+nonw_leiden <- cluster_leiden(gr, resolution_parameter = 0.1, objective_function = c("modularity"))#, resolution_parameter = 1.2)
+w_leiden <- cluster_leiden(gr_w, resolution_parameter = 0.01, vertex_weights = E(gr_w)$weight, objective_function = c("modularity"))#, resolution_parameter = 1)
+table(nonw_leiden$membership, w_leiden$membership)
+```
+```{r}
+MC_tsne
+df <- data.frame(MC_tsne, weighted_louvain = factor(w_louvain$membership), nonweighted_louvain = factor(nonw_louvain_membership), size = MC$supercell_size)
+
+df %>% 
+  ggplot(aes(x = tSNE_1, y = tSNE_2)) +
+	geom_point(aes(size = size, color = weighted_louvain), alpha = 0.7) +
+	theme_classic() + theme(asp=1, legend.position = 'none')
+ggsave("./plots/tnse_weighted_louvain.pdf")
+
+df %>% 
+  ggplot(aes(x = tSNE_1, y = tSNE_2)) +
+	geom_point(aes(size = size, color = nonweighted_louvain), alpha = 0.7) +
+	theme_classic() + theme(asp=1, legend.position = 'none')
+ggsave("./plots/tnse_nonweighted_louvain.pdf")
+```
+
+```{r}
+df <- data.frame(MC_tsne, weighted = factor(w_leiden$membership), nonweighted = factor(nonw_leiden$membership), size = MC$supercell_size)
+
+df %>% 
+  ggplot(aes(x = tSNE_1, y = tSNE_2)) +
+	geom_point(aes(size = size, color = weighted), alpha = 0.7) +
+	theme_classic() + theme(asp=1, legend.position = 'none')
+ggsave("./plots/tnse_weighted_leiden.pdf")
+
+df %>% 
+  ggplot(aes(x = tSNE_1, y = tSNE_2)) +
+	geom_point(aes(size = size, color = nonweighted), alpha = 0.7) +
+	theme_classic() + theme(asp=1, legend.position = 'none')
+ggsave("./plots/tnse_nonweighted_leiden.pdf")
+```
+
+

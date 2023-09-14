@@ -1,0 +1,101 @@
+---
+title: "Graining level used in studies"
+author: "Mariia Bilous"
+date: "2023-03-21"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+Read table with collected graining levels across studies
+```{r}
+gamma.df <- read.csv("graining_level.csv")
+```
+
+Filter out irrelevant methods (i.e., hdWGCNA, which use neighborhood approach instead of metacells) and group rare tools 
+```{r}
+tools <- unique(gamma.df$metacell_tool)
+tools
+
+keep.tools <- c("Other", "SEACell", "SuperCell", "MetaCell")   
+colors <- c("#f2e9e4", "#9a8c98", "#4a4e69", "#22223b")
+names(colors) <- c(keep.tools)
+
+gamma.df <- gamma.df %>%
+  filter(metacell_tool != "hdWGCNA") # not a metacell tool (neighborhoods)
+
+gamma.df$metacell_tool_exact <- gamma.df$metacell_tool
+
+gamma.df$metacell_tool[!(gamma.df$metacell_tool %in% keep.tools)] <- "Other"
+gamma.df$metacell_tool <- factor(gamma.df$metacell_tool, rev(keep.tools))
+```
+
+Overall gamma distribution and statistics
+```{r}
+hist(log10(gamma.df$graining_level))
+
+summary(gamma.df$graining_level[gamma.df$metacell_tool != 'MetaCell'])
+summary(gamma.df$graining_level[gamma.df$metacell_tool == 'MetaCell'])
+summary(gamma.df$graining_level)
+```
+
+Plot gamma distribution colored by metacell tool 
+
+```{r}
+gamma.df %>%
+  ggplot(aes(x = graining_level, fill = metacell_tool)) + 
+  geom_histogram(alpha = 1, color = "white") +
+  scale_fill_manual(values = colors) +
+  scale_x_log10() +
+  labs(x = "Graining level", y = "Counts") +
+  theme_classic() +  theme(asp = 0.70) 
+
+ggsave(file = "./plots/gamma_distr.pdf", width = 6, height = 6)
+
+```
+
+Plot correlation between a size of dataset and applied graining level
+
+```{r}
+p <- gamma.df %>%
+  ggplot(aes(x = graining_level, y = N_cells )) + 
+  geom_point(aes(color = metacell_tool), alpha = 0.9) +
+  scale_fill_manual(values = colors)+
+  scale_color_manual(values = colors)+
+  theme(legend.position = "bottom") +
+  scale_y_log10() + scale_x_log10() +
+  labs(x = "Graining level", y = "Dataset size") +
+  theme_classic()+
+  theme(asp = 0.7) +
+  geom_smooth(method='lm', color = NA, se = FALSE)
+
+p1 <- p + ggpubr::stat_cor(method="pearson", size = 3)
+p1
+ggsave("./plots/gamma_distr_scatter.pdf", width = 6, height = 6)
+
+p2 <- p + ggpubr::stat_cor(aes(color = metacell_tool), method="pearson", p.accuracy = 0.001, r.accuracy = 0.01, size = 3)
+p2
+ggsave("./plots/gamma_distr_scatter_per_method_correlation.pdf", width = 6, height = 6)
+```
+
+
+## Metacell size distribution scheme
+
+```{r mc-size-distribution}
+set.seed(12345)
+s2 <- round(rnorm(100, 20, 5)) 
+s1 <- round(rnorm(100, 20, 10))
+
+s2[s2<1] <- 1
+
+df <- data.frame(size = c(s1, s2), group = rep(c("s1", "s2"), c(length(s1), length(s2))))
+
+df %>% ggplot(aes(y = size, x = factor(group))) + geom_violin(fill = "gray", trim = F, adjust = 1) + theme_void()
+ggsave("./plots/MC_size_distribution_scheme.pdf")
+```
+
+
+

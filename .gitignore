@@ -1,0 +1,14 @@
+__pycache__/
+
+data/
+
+.DS_Store
+*.pdf
+
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+.RDataTmp
