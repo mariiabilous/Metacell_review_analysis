@@ -1,0 +1,20 @@
+description: |
+ Config file for the benchmarking pipeline
+
+data:
+  data_link: 'https://datasets.cellxgene.cziscience.com/c0147bc9-356c-462c-93b9-8d0921887304.h5ad'
+
+dataset_download:
+  threads: 1
+  memory: 8000
+  time: '1:00:00'
+
+dataset_subsampling:
+  threads: 1
+  memory: 50000
+  time: '1:00:00'
+
+run_SuperCell:
+  threads: 1
+  memory: 50000
+  time: '1:00:00'

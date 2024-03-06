@@ -1,0 +1,76 @@
+
+gamma_values = [10]
+nb_cells_list = [10000, 25000, 50000]
+
+rule all:
+    input:
+        'results/data_full/sc_data.h5ad',
+         expand('results/data_subsets/sc_data/sc_data_{nb_cells}_cells.h5ad', nb_cells=nb_cells_list),
+         expand('results/data_subsets/mc_data/SuperCell/gamma{gamma}/{nb_cells}cells/mc_adata.h5ad', nb_cells=nb_cells_list, gamma=gamma_values)
+
+rule dataset_download:
+    '''
+    Download HLCA dataset.
+    '''
+    output:
+        sc_data = 'results/data_full/sc_data.h5ad'
+    container:
+        "docker://agabriel/matk:dev"
+    resources:
+        mem_mb = config['dataset_download']['memory'],
+        time = config['dataset_download']['time']
+    params:
+        download_link = config['data']['data_link']
+    shell:
+        """
+        wget -O results/data_full/sc_data.h5ad {params.download_link}
+        """
+
+rule dataset_subsampling:
+    '''
+    Generate datasets with different sizes.
+    '''
+    input:
+        anndata_file = 'results/data_full/sc_data.h5ad'
+    output:
+        sc_data = 'results/data_subsets/sc_data/sc_data_{nb_cells}_cells.h5ad'
+    container:
+        "docker://agabriel/matk:dev"
+    params:
+        nb_cells = lambda wildcards: wildcards.nb_cells,
+        output_folder = "results/data_subsets/sc_data/"
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * config['dataset_subsampling']['memory'],
+        time = config['dataset_subsampling']['time']
+    shell:
+        """
+        Rscript scripts/dataset_subsampling.r {input.anndata_file} {params.nb_cells} {params.output_folder}
+        """
+
+rule run_SuperCell:
+    '''
+    Build metacells for each data subset using SuperCell.
+    '''
+    input:
+        sc_data = 'results/data_subsets/sc_data/sc_data_{nb_cells}_cells.h5ad'
+    output:
+        mc_data = 'results/data_subsets/mc_data/SuperCell/gamma{gamma}/{nb_cells}cells/mc_adata.h5ad',
+        SuperCell_banchmarks = 'benchmarks_time/gamma{gamma}_{nb_cells}cells_SuperCell.txt'
+    container:
+        "docker://agabriel/matk:dev"
+    params:
+        nb_cells = lambda wildcards: wildcards.nb_cells,
+        gamma = lambda wildcards: wildcards.gamma,
+        output_folder = 'results/data_subsets/mc_data/SuperCell/'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * config['run_SuperCell']['memory'],
+        time = config['run_SuperCell']['time']
+    benchmark:
+        "benchmarks/gamma{gamma}_{nb_cells}cells_SuperCell.txt"
+    shell:
+        """
+        mkdir -p benchmarks_time;
+        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.nb_cells}cells_SuperCell.txt MATK -t SuperCell -i results/data_subsets/sc_data/sc_data_{params.nb_cells}_cells.h5ad -o {params.output_folder}gamma{params.gamma}/{params.nb_cells}cells/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata
+        """
+
+# snakemake --snakefile Snakefile --profile configs/slurm/ --configfile configs/config.yaml
