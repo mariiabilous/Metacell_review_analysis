@@ -9,12 +9,22 @@ dataset_download:
   memory: 8000
   time: '1:00:00'
 
-dataset_subsampling:
+dataset_aggregating:
   threads: 1
-  memory: 50000
+  memory: 150000
   time: '1:00:00'
 
 run_SuperCell:
-  threads: 1
-  memory: 50000
-  time: '1:00:00'
+  threads: 16
+  memory: 150000
+  time: '3:00:00'
+
+run_SEACells:
+  threads: 16
+  memory: 150000
+  time: '3:00:00'
+
+run_MetaCell:
+  threads: 16
+  memory: 150000
+  time: '3:00:00'

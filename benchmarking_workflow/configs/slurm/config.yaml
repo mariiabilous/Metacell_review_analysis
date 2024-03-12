@@ -8,9 +8,9 @@ cluster:
     --output=logs/{rule}/{rule}-{wildcards}-%j.out
     --error=logs/{rule}/{rule}-{wildcards}-%j.err
 default-resources:
-  - slurm_account=agabrie4
-  - tmpdir='/scratch/agabrie4/snakemake_tmp/'  # location of the folder where snakemake should save the tmp files
-restart-times: 1 # this will allow to re-run a job 3 time maximum if it fails (usefull if we specify in the rule to increase memory in each attempt)
+  - slurm_account=mteleman
+  - tmpdir='/scratch/mteleman/snakemake_tmp/'  # location of the folder where snakemake should save the tmp files
+restart-times: 3 # this will allow to re-run a job 3 time maximum if it fails (usefull if we specify in the rule to increase memory in each attempt)
 latency-wait: 120
 jobs: 500 # to say that we wwant that a maximum of 100 jobs are launched on the cluster
 keep-going: True  #Go on with independent jobs if a job fails
