@@ -1,4 +1,4 @@
-cluster:
+cluster-generic-submit-cmd:
   mkdir -p logs/{rule} &&
   sbatch
     --cpus-per-task={threads}
@@ -8,12 +8,34 @@ cluster:
     --output=logs/{rule}/{rule}-{wildcards}-%j.out
     --error=logs/{rule}/{rule}-{wildcards}-%j.err
 default-resources:
-  - slurm_account=mteleman
-  - tmpdir='/scratch/mteleman/snakemake_tmp/'  # location of the folder where snakemake should save the tmp files
+  - slurm_account=agabrie4
+  - tmpdir='/scratch/agabrie4/snakemake_tmp/'  # location of the folder where snakemake should save the tmp files
 restart-times: 3 # this will allow to re-run a job 3 time maximum if it fails (usefull if we specify in the rule to increase memory in each attempt)
 latency-wait: 120
-jobs: 500 # to say that we wwant that a maximum of 100 jobs are launched on the cluster
+jobs: 500 # to say that we wwant that a maximum of 500 jobs are launched on the cluster
 keep-going: True  #Go on with independent jobs if a job fails
 rerun-incomplete: True  #Re-run all jobs the output of which is recognized as incomplete
 printshellcmds: True  #Print out the shell commands that will be executed
-use-singularity: True  #If defined in the rule, run job within a singularity container. If this flag is not set, the singularity directive is ignored
+use-apptainer: True  #If defined in the rule, run job within a singularity container. If this flag is not set, the singularity directive is ignored
+
+default-resources:
+  mem_mb: 8MB
+  time: 1:00:00
+set-threads:
+  dataset_download: 1
+  dataset_aggregating: 1
+  run_SuperCell: 16
+  run_SEACells: 16
+  run_MetaCell: 16
+set-resources:
+  dataset_aggregating:
+    mem_mb: 50MB
+  run_SuperCell:
+    mem_mb: 150MB
+    time: 3:00:00
+  run_SEACells:
+    mem_mb: 150MB
+    time: 3:00:00
+  run_MetaCell:
+    mem_mb: 150MB
+    time: 3:00:00

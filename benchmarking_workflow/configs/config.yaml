@@ -3,28 +3,3 @@ description: |
 
 data:
   data_link: 'https://datasets.cellxgene.cziscience.com/c0147bc9-356c-462c-93b9-8d0921887304.h5ad'
-
-dataset_download:
-  threads: 1
-  memory: 8000
-  time: '1:00:00'
-
-dataset_aggregating:
-  threads: 1
-  memory: 150000
-  time: '1:00:00'
-
-run_SuperCell:
-  threads: 16
-  memory: 150000
-  time: '3:00:00'
-
-run_SEACells:
-  threads: 16
-  memory: 150000
-  time: '3:00:00'
-
-run_MetaCell:
-  threads: 16
-  memory: 150000
-  time: '3:00:00'

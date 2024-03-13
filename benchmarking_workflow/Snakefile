@@ -1,8 +1,7 @@
 
-gamma_values = [100]
-datasets_list = [1, 2, 3, 4,
-              5, 6, 7, 8,
-              9 , 10, 11, 12, 13, 14]
+gamma_values = [10]
+datasets_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+# 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14
 
 rule all:
     input:
@@ -20,14 +19,13 @@ rule dataset_download:
         sc_data = 'results/data_full/sc_data.h5ad'
     container:
         "docker://agabriel/matk:dev"
-    resources:
-        mem_mb = config['dataset_download']['memory'],
-        time = config['dataset_download']['time']
     params:
         download_link = config['data']['data_link']
+    log:
+        'logs/dataset_download.txt'
     shell:
         """
-        wget -O results/data_full/sc_data.h5ad {params.download_link}
+        wget -O results/data_full/sc_data.h5ad {params.download_link} > {log} 2>&1
         """
 
 rule dataset_aggregating:
@@ -43,12 +41,11 @@ rule dataset_aggregating:
     params:
         dataset = lambda wildcards: wildcards.dataset,
         output_folder = "results/data_subsets/sc_data/"
-    resources:
-        mem_mb = lambda wildcards, attempt: attempt * config['dataset_aggregating']['memory'],
-        time = config['dataset_aggregating']['time']
+    log:
+        'logs/dataset_aggregating/dataset_aggregating_{dataset}.txt'
     shell:
         """
-        Rscript scripts/dataset_aggregating.r {input.anndata_file} {params.dataset} {params.output_folder}
+        Rscript scripts/dataset_aggregating.r {input.anndata_file} {params.dataset} {params.output_folder} > {log} 2>&1
         """
 
 rule run_SuperCell:
@@ -66,16 +63,14 @@ rule run_SuperCell:
         dataset = lambda wildcards: wildcards.dataset,
         gamma = lambda wildcards: wildcards.gamma,
         output_folder = 'results/data_subsets/mc_data/SuperCell/'
-    resources:
-        mem_mb = lambda wildcards, attempt: attempt * config['run_SuperCell']['memory'],
-        time = config['run_SuperCell']['time']
-    threads: config['run_MetaCell']['threads']
     benchmark:
         "benchmarks/gamma{gamma}_{dataset}_SuperCell.txt"
+    log:
+        'logs/run_SuperCell/gamma{gamma}_{dataset}_SuperCell.txt'
     shell:
         """
         mkdir -p benchmarks_time;
-        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_SuperCell.txt MATK -t SuperCell -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads}
+        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_SuperCell.txt MATK -t SuperCell -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads} > {log} 2>&1
         """
 
 rule run_SEACells:
@@ -93,16 +88,14 @@ rule run_SEACells:
         dataset = lambda wildcards: wildcards.dataset,
         gamma = lambda wildcards: wildcards.gamma,
         output_folder = 'results/data_subsets/mc_data/SEACells/'
-    resources:
-        mem_mb = lambda wildcards, attempt: attempt * config['run_SEACells']['memory'],
-        time = config['run_SEACells']['time']
-    threads: config['run_MetaCell']['threads']
     benchmark:
         "benchmarks/gamma{gamma}_{dataset}_SEACells.txt"
+    log:
+        'logs/run_SEACells/gamma{gamma}_{dataset}_SEACells.txt'
     shell:
         """
         mkdir -p benchmarks_time;
-        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_SEACells.txt MATK -t SEACells -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads}
+        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_SEACells.txt MATK -t SEACells -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads} > {log} 2>&1
         """
 
 rule run_MetaCell:
@@ -120,16 +113,14 @@ rule run_MetaCell:
         dataset = lambda wildcards: wildcards.dataset,
         gamma = lambda wildcards: wildcards.gamma,
         output_folder = 'results/data_subsets/mc_data/MetaCell/'
-    resources:
-        mem_mb = lambda wildcards, attempt: attempt * config['run_MetaCell']['memory'],
-        time = config['run_MetaCell']['time']
-    threads: config['run_MetaCell']['threads']
     benchmark:
         "benchmarks/gamma{gamma}_{dataset}_MetaCell.txt"
+    log:
+        'logs/run_MetaCell/gamma{gamma}_{dataset}_MetaCell.txt'
     shell:
         """
         mkdir -p benchmarks_time;
-        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_MetaCell.txt MATK -t MetaCell -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads}
+        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_MetaCell.txt MATK -t MetaCell -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads} > {log} 2>&1
         """
 
 # snakemake --snakefile Snakefile --profile configs/slurm/ --configfile configs/config.yaml
