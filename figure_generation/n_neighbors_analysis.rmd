@@ -1,0 +1,201 @@
+---
+title: "k_knn_analysis"
+author: "Leonard Herault"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Loading R packages
+```{r setup, include=FALSE}
+library(Seurat)
+library(SeuratData)
+library(dplyr)
+library(SuperCell)
+library(ggplot2)
+library(SeuratData)
+library(MetacellAnalysisToolkit)
+
+```
+
+
+
+
+
+
+# Setting python env for SEACells
+
+```{r}
+library(reticulate)
+conda_env <-  conda_list()[reticulate::conda_list()$name == "MCAT_seurat_v5","python"]
+
+Sys.setenv(RETICULATE_PYTHON = conda_env)
+```
+
+
+# Loading PBMC data
+```{r}
+#InstallData("pbmc3k")
+
+data("pbmc3k")
+```
+
+```{r}
+pbmc3k.final <- UpdateSeuratObject(pbmc3k)
+pbmc3k.final[['percent.mt']] <- PercentageFeatureSet(pbmc3k.final, pattern = '^MT-')
+pbmc3k.final <- subset(x = pbmc3k.final, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+pbmc3k.final <- NormalizeData(pbmc3k.final)
+pbmc3k.final <- FindVariableFeatures(pbmc3k.final)
+pbmc3k.final <- ScaleData(pbmc3k.final, features = rownames(pbmc3k.final))
+pbmc3k.final <- RunPCA(pbmc3k.final, features = VariableFeatures(pbmc3k.final))
+
+pbmc3k.final <- FindNeighbors(pbmc3k.final, dims = 1:10)
+pbmc3k.final <- FindClusters(pbmc3k.final, resolution = 0.5)
+pbmc3k.final <- RunUMAP(pbmc3k.final, dims = 1:10)
+pbmc3k.final <- RunTSNE(pbmc3k.final, dims = 1:10)
+new.cluster.ids <- c("Naive CD4 T", "Memory CD4 T", "CD14+ Mono", "B", "CD8 T", "FCGR3A+ Mono", "NK", "DC", "Platelet")
+names(new.cluster.ids) <- levels(pbmc3k.final)
+pbmc3k.final <- RenameIdents(pbmc3k.final, new.cluster.ids)
+pbmc3k.final$celltype <- Idents(pbmc3k.final)
+```
+
+```{r}
+VlnPlot(pbmc3k.final,c("CD4","IL7R","CD14","CD19","CD8A","FCGR3A","KLRB1","CD74","PF4"),stack = T)
+
+VlnPlot(pbmc3k.final,c("CD4","TCF7","IL7R","CCR7","CD14","S100A4","MS4A1","CD8A","FCGR3A","KLRD1","CD1C","PF4"),stack = T,group.by = "seurat_clusters")
+Idents(pbmc3k.final) <- "seurat_clusters"
+TSNEPlot(pbmc3k.final)
+pbmc3k.final <- RenameIdents(pbmc3k.final,"8" = "Platelet",
+                               "7" = "DC",
+                               "6" = "NK",
+                               "5" = "CD16 Mono",
+                               "4" = "CD8 T",
+                               "3" = "B",
+                               "2" = "Memory CD4 T",
+                               "1" = "CD14 Mono",
+                               "0" = "Naive CD4 T")
+pbmc3k.final$celltype <- Idents(pbmc3k.final)
+
+
+```
+```{r}
+VlnPlot(pbmc3k.final,c("CD4","TCF7","IL7R","CCR7","CD14","S100A4","MS4A1","CD8A","FCGR3A","KLRD1","CD1C","PF4"),stack = T)
+```
+
+# Saving annotated dataset
+```{r}
+dir.create('k_knn_analysis')
+saveRDS(pbmc3k.final,"k_knn_analysis/pbmc3k.final.sc.rds")
+```
+# Metacell building using SuperCell with different k for the knn
+```{bash}
+<!-- for k in {5,10,15,30,50,100}; -->
+<!-- do ~/Documents/reviewTutorial/MetacellAnalysisToolkit/cli/MATK -t SuperCell -i k_knn_analysis/pbmc3k.final.sc.rds -o k_knn_analysis/SuperCell/pbmc_$k/ -n 10 -f 2000 -k $k -g 50 -s seurat -->
+<!-- done -->
+```
+
+
+
+# Loading results and plotting tSNEs
+
+```{r}
+tsne.df <- data.frame()
+
+
+ks = c(5,10,15,30,50,100)
+for (k in ks) {
+  
+  MC <- SCimplify_from_embedding(X = pbmc3k.final@reductions$pca@cell.embeddings[,1:10], gamma = 50,k.knn = k)
+  
+  
+  MC$celltype <- supercell_assign(clusters = pbmc3k.final$celltype,supercell_membership = MC$membership,method = "absolute")
+  
+  
+  MC_tsne <- as.matrix(t(as.matrix(SuperCell::supercell_GE(t(pbmc3k.final@reductions$tsne@cell.embeddings), MC$membership ))))
+  MC_tsne <- data.frame(MC_tsne)
+  MC_tsne$tool <- "SuperCell"
+  MC_tsne$celltype <- MC$celltype 
+  MC_tsne$size <- MC$supercell_size 
+  MC_tsne$k <- k
+  tsne.df <- rbind(tsne.df,MC_tsne)
+
+  
+  
+}
+```
+```{r}
+colors <- c(ggthemes::colorblind_pal()(8),"darkgrey")
+scales::show_col(colors)
+
+ks = c(5,15,30,50,100)
+
+all.tsnes <- ggplot(tsne.df[tsne.df$k %in% ks,],aes(x= tSNE_1,y= tSNE_2,col = celltype,size = size)) + facet_wrap("~k") + theme_classic() + NoLegend() + geom_point() + scale_color_manual(values = colors) + 
+  theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),axis.title = element_blank(),
+        plot.title = element_blank()) 
+
+all.tsnes
+```
+
+
+# Metacell building using SEACells with different k for the knn
+
+
+```{bash}
+for k in {5,10,15,30,50,100};
+do ~/Documents/reviewTutorial/MetacellAnalysisToolkit/cli/MATK -t SEACells -i k_knn_analysis/pbmc3k.final.sc.rds -o k_knn_analysis/SEACells/pbmc_$k/ -n 10 -f 2000 -k $k -g 50 -s seurat
+done
+
+
+```
+
+# Loading results and plotting tSNEs
+
+```{r}
+
+ks = c(10,15,30,50,100)
+for (k in ks) {
+  MC.seurat <- readRDS(paste0("k_knn_analysis/SEACells/pbmc_",k,"/mc_Seurat.rds"))
+  mc.proj <- mc_projection(
+    sc.obj = pbmc3k.final, 
+    mc.obj = MC.seurat,
+    cell.membership = MC.seurat@misc$cell_membership,
+    sc.reduction = "tsne", 
+    sc.label = unlist("celltype"), # single cells will be colored according the sc.label  
+    metacell.label = unlist("celltype") # metacells cell will be colored according the metacell.label
+  ) + theme_classic()
+  
+  plot(mc.proj)
+  
+  #cov.plot[[paste0("SEACells_k_",k)]] <- mc.proj
+  mc.proj$layers[[2]]$data$k <- k
+  mc.proj$layers[[2]]$data$tool <- "SEACells"
+  tsne.df <- rbind(tsne.df,mc.proj$layers[[2]]$data[,colnames(tsne.df)])
+  # meta.df <- meta.df[colnames(meta.df[,colnames(meta.df)%in% colnames(MC.seurat@meta.data)])]
+  # meta.df <- rbind(meta.df,MC.seurat@meta.data[,colnames(meta.df)])
+  
+  
+}
+```
+# Assembling final figure
+
+```{r fig.height=1.75,fig.width=3.5}
+ks <- c(5,15,50,100)
+tsne.df$tool <- factor(tsne.df$tool,levels = c("SuperCell","SEACells"))
+tsne.df$k.knn <- factor(paste0("k = ",tsne.df$k),levels = c("k = 5","k = 15","k = 50","k = 100"))
+
+all.tsnes <- ggplot(tsne.df[tsne.df$k %in% ks,],aes(x= tSNE_1,y= tSNE_2,col = celltype,size = size)) + facet_grid(c("tool","k.knn"),switch = "y") + theme_classic() + NoLegend() + geom_point() + scale_color_manual(values = colors) + 
+  theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),axis.title = element_blank(),
+        plot.title = element_blank()) 
+
+pdf("figure_n_neighbor_analysis.pdf",height = 4,width = 8)
+all.tsnes
+dev.off()
+```
+## Single cell tSNE with same colors
+
+```{r}
+names(colors) <- sort(unique(tsne.df$celltype))
+TSNEPlot(pbmc3k.final,cols = colors)
+```
+
+
+
