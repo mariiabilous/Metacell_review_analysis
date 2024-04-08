@@ -62,24 +62,26 @@ seurat.bm <- ScaleData(seurat.bm)
 seurat.bm <- RunPCA(seurat.bm,npcs = 50)
 seurat.bm <- FindNeighbors(seurat.bm, dims = 1:50)
 seurat.bm <- RunUMAP(seurat.bm, dims = 1:50)
+seurat.bm <- RunTSNE(seurat.bm, dims = 1:50)
+
 
 seurat.bm <- FindClusters(seurat.bm)
 
-p <- UMAPPlot(seurat.bm,group.by = "celltype",cols = my34colors) 
+p <- UMAPPlot(seurat.bm,group.by = "celltype") 
 
 p <- p + ggplot2::theme(asp = 1)
 p
 
 ```
 ```{r}
- UMAPPlot(seurat.bm,group.by = "celltype",cols = my34colors) 
+ UMAPPlot(seurat.bm,group.by = "celltype") 
 ```
 
 
 ```{r}
 seurat.bm$num.celltype <- as.numeric(factor(seurat.bm$celltype))
 
-UMAPPlot(seurat.bm,group.by = "num.celltype",cols = my34colors) 
+UMAPPlot(seurat.bm,group.by = "num.celltype") 
 ```
 
 
@@ -101,6 +103,8 @@ seurat.tcells <- RunPCA(seurat.tcells)
 seurat.tcells <- FindNeighbors(seurat.tcells)
 seurat.tcells <- FindClusters(seurat.tcells, resolution = 0.1)
 seurat.tcells <- RunUMAP(seurat.tcells, dims = 1:5)
+seurat.tcells <- RunTSNE(seurat.tcells, dims = 1:5)
+
 
 
 p <- UMAPPlot(seurat.tcells,group.by = "celltype") #, group.by = 'celltype.l2'
@@ -111,7 +115,7 @@ p
 ```{r}
 #seurat.tcells$num.celltype <- as.numeric(factor(Idents(seurat.tcells)))
 
-UMAPPlot(seurat.tcells,group.by = "num.celltype",cols = my34colors) 
+UMAPPlot(seurat.tcells,group.by = "num.celltype") 
 ```
 
 
@@ -147,6 +151,7 @@ cbmc <- ScaleData(cbmc)
 cbmc <- RunPCA(cbmc,npcs = 50)
 cbmc <- FindNeighbors(cbmc, dims = 1:20)
 cbmc <- RunUMAP(cbmc, dims = 1:20)
+cbmc <- RunTSNE(cbmc, dims = 1:20)
 
 cbmc <- FindClusters(cbmc)
 
@@ -158,13 +163,30 @@ p <- p + ggplot2::theme(asp = 1)
 p
 ```
 ```{r}
-unique(seurat.bm.ss@meta.data[,c("celltype","num.celltype")])
+UMAPPlot(cbmc,group.by = "seurat_clusters",label=T)
+```
+```{r}
+FeaturePlot(cbmc,c("KLRB1","CD14","FCGR3A","NKG7"))
+```
+
+
+```{r}
+unique(seurat.bm@meta.data[,c("celltype","num.celltype")])
 cbmc$num.celltype <- plyr::mapvalues(cbmc$rna_annotations,
                                   from = unique(cbmc$rna_annotations),
                                   to = c(22,16,21,11,8,3,7,2,15,1,17,4))
 ```
 
+```{r}
+idx <- Cells(seurat.bm)[sample(1:ncol(seurat.bm), N, replace = FALSE)]
 
+seurat.bm.ss <- subset(x = seurat.bm,  cells=idx)
+#seurat.bm.ss <- RunUMAP(seurat.bm.ss, dims = 1:50)
+p <- UMAPPlot(seurat.bm.ss,group.by = "celltype")
+p <- p + ggplot2::theme(asp=1)
+p
+
+```
 ```{r}
 UMAPPlot(cbmc,group.by = "rna_annotations")
 
@@ -201,16 +223,7 @@ covered.celltypes
 ```
 
 
-```{r}
-idx <- Cells(seurat.bm)[sample(1:ncol(seurat.bm), N, replace = FALSE)]
 
-seurat.bm.ss <- subset(x = seurat.bm,  cells=idx)
-#seurat.bm.ss <- RunUMAP(seurat.bm.ss, dims = 1:50)
-p <- UMAPPlot(seurat.bm.ss,group.by = "celltype",cols = my34colors)
-p <- p + ggplot2::theme(asp=1)
-p
-
-```
 
 ```{r}
 MC <- SuperCell::SCimplify(Seurat::GetAssayData(seurat.bm, slot = "data"),  
@@ -365,7 +378,7 @@ for (s in sizes) {
 ```{r}
 covered.celltypes.size$size0 <- covered.celltypes.size$size
 covered.celltypes.size$size <- factor(paste0(as.character(floor(covered.celltypes.size$size/1000)),"k"),levels = c("30k","5k","1k"))
-covered.celltypes.size.percent.bm <- ggplot(covered.celltypes.size,aes(x=gamma,y=percent.coverage,col = Size,group = Size)) + geom_point() + geom_line() + scale_x_continuous( breaks=c(1,50,100,150)) + theme_classic() + ylab("covered cell types") + scale_y_continuous(labels = scales::percent)
+covered.celltypes.size.percent.bm <- ggplot(covered.celltypes.size,aes(x=gamma,y=percent.coverage,col = size,group = size)) + geom_point() + geom_line() + scale_x_continuous( breaks=c(1,50,100,150)) + theme_classic() + ylab("covered cell types") + scale_y_continuous(labels = scales::percent)
 covered.celltypes.size.percent.bm
 ```
 ```{r}
@@ -379,7 +392,7 @@ covered.celltypes.size.bm
 data.umap$dataset<- factor(paste0(as.character(floor(data.umap$size/1000)),"k"),levels = rev(c("30k","5k","1k"))) 
 
 #umap_1/2 is in lower case in seurat_v5
-bm.plots <- ggplot(data.umap,aes(x= umap_1,y= umap_2,col = celltype)) + facet_wrap("~dataset") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = (my34colors))   + 
+bm.plots <- ggplot(data.umap,aes(x= umap_1,y= umap_2,col = celltype)) + facet_wrap("~dataset") + geom_point(size = 0.1) + theme_classic() + NoLegend()    + 
     theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),
           plot.title = element_blank()) 
 
@@ -423,29 +436,37 @@ UMAPPlot(cbmc,group.by = "num.celltype",cols = final.colors.2,label =T)
 ```
 
 ```{r fig.height=1,fig.width=4}
-data.umap.complexity = data.frame()
+data.dim.red.complexity = data.frame()
 
 
 umap.tcells <- UMAPPlot(seurat.tcells,group.by="num.celltype")
 umap.tcells$data$dataset <- "T cells"
+colnames(umap.tcells$data)[c(1,2)] <- c('Component_1','Component_2')
 
 umap.bm.ss <- UMAPPlot(seurat.bm.ss,group.by="num.celltype")
 umap.bm.ss$data$dataset <- "Bone Marrow"
+colnames(umap.bm.ss$data)[c(1,2)] <- c('Component_1','Component_2')
 
 
-umap.cbmc <- UMAPPlot(cbmc,group.by="num.celltype")
-umap.cbmc$data$dataset <- "CBMCs"
 
-data.umap.complexity <- rbind(umap.tcells$data,umap.cbmc$data,umap.bm.ss$data)
+# umap.cbmc <- UMAPPlot(cbmc,group.by="num.celltype")
+# umap.cbmc$data$dataset <- "CBMCs"
 
-data.umap.complexity$dataset<- factor(data.umap.complexity$dataset,levels = c("T cells","CBMCs","Bone Marrow"))
+tsne.cbmc <- TSNEPlot(cbmc,group.by="num.celltype")
+tsne.cbmc$data$dataset <- "CBMCs"
+colnames(tsne.cbmc$data)[c(1,2)] <- c('Component_1','Component_2')
+
+
+data.dim.red.complexity <- rbind(umap.tcells$data,tsne.cbmc$data,umap.bm.ss$data)
+
+data.dim.red.complexity$dataset<- factor(data.dim.red.complexity$dataset,levels = c("T cells","CBMCs","Bone Marrow"))
 
 #umap_1/2 is in lower case in seurat_v5
-umap.complexity.plots <- ggplot(data.umap.complexity,aes(x= umap_1,y= umap_2,col = num.celltype)) + facet_wrap("~dataset",scales = "free") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = final.colors.2)   + 
+dim.red.complexity.plots <- ggplot(data.dim.red.complexity,aes(x= Component_1,y= Component_2,col = num.celltype)) + facet_wrap("~dataset",scales = "free") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = final.colors.2)   + 
     theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),
           plot.title = element_blank()) 
 
-cowplot::plot_grid(umap.complexity.plots,covered.celltypes.complexity,rel_widths = c(3,1.5))
+cowplot::plot_grid(dim.red.complexity.plots,covered.celltypes.complexity,rel_widths = c(3,1.5))
 ```
 
 
@@ -456,20 +477,20 @@ data.umap.size$Size <- NULL
 data.umap.size$size <- NULL
 data.umap.size$num.celltype <- as.numeric(factor(data.umap.size$celltype))
 data.umap.size$celltype <- NULL
+colnames(data.umap.size)[c(1,2)] <- c("Component_1","Component_2")
 
 
-
-all.umaps <- ggplot(rbind(data.umap.size,data.umap.complexity),aes(x= umap_1,y= umap_2,col = num.celltype)) + facet_wrap("~dataset",scales = "free") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = final.colors.2)   + 
+all.dim.reds <- ggplot(rbind(data.umap.size,dim.red.complexity.plots$data),aes(x= Component_1,y= Component_2,col = num.celltype)) + facet_wrap("~dataset",scales = "free") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = final.colors.2)   + 
     theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),axis.title = element_blank(),
           plot.title = element_blank()) 
 
-all.umaps
+all.dim.reds
 ```
 
 ```{r fig.height=1.5,fig.width=3.5}
 library(cowplot)
 
-plot_grid(all.umaps,plot_grid(covered.celltypes.size.bm + theme(legend.justification = c(0,1)),covered.celltypes.complexity+ theme(legend.justification = c(0,1)),ncol = 1,align = "v"),rel_widths = c(3,1.8))
+plot_grid(all.dim.reds,plot_grid(covered.celltypes.size.bm + theme(legend.justification = c(0,1)),covered.celltypes.complexity+ theme(legend.justification = c(0,1)),ncol = 1,align = "v"),rel_widths = c(3,1.8))
 
 ggplot2::ggsave(filename = "plots/complexity_size_fig2.pdf", width = 8,height = 3.5,units = "in")
 
