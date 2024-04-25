@@ -1,126 +1,91 @@
 
-gamma_values = [10, 100]
-datasets_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-# 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14
+from pathlib import Path
+
+gamma_values = [75]
+datasets_list = [3,7,10,12,15,20,25,30,35,40,50]
+
+tools = ["SEACells", "SuperCell", "SuperCell_approx", "MetaCell", "MetaCell_multithreads", "SEACells_gpu"]
+
 
 rule all:
     input:
-        'results/data_full/sc_data.h5ad',
-         expand('results/data_subsets/sc_data/sc_data_{dataset}.h5ad', dataset=datasets_list),
-         expand('results/data_subsets/mc_data/SuperCell/gamma{gamma}/{dataset}/mc_adata.h5ad', dataset=datasets_list, gamma=gamma_values),
-         expand('results/data_subsets/mc_data/SEACells/gamma{gamma}/{dataset}/mc_adata.h5ad', dataset=datasets_list, gamma=gamma_values),
-         expand('results/data_subsets/mc_data/MetaCell/gamma{gamma}/{dataset}/mc_adata.h5ad', dataset=datasets_list, gamma=gamma_values)
+        'results/data_full/sc_data.rds',
+        'results/data_full/metadata.csv',
+        'results/data_full/gene.csv',
+         expand('results/data_subsets/sc_data/sc_data_{dataset}.rds', dataset=datasets_list),
+         expand('results/{tool}/gamma{gamma}/{dataset}/mc_adata.h5ad', dataset=datasets_list, gamma=gamma_values, tool = tools)
 
 rule dataset_download:
     '''
     Download HLCA dataset.
     '''
     output:
-        sc_data = 'results/data_full/sc_data.h5ad'
+        sc_data = 'results/data_full/sc_data.rds',
+        cell_annotation = 'results/data_full/metadata.csv',
+        genes_annotation = 'results/data_full/gene.csv'
     container:
-        "docker://agabriel/matk:dev"
+        "docker://agabriel/matk:gpu"
     params:
-        download_link = config['data']['data_link']
-    log:
-        'logs/dataset_download.txt'
+        download_link_data = config['data']['data_link_mouse'],
+        download_link_metadata = config['data']['annotation_link_mouse'],
+        download_link_genes = config['data']['genes_link_mouse']
     shell:
         """
-        wget -O results/data_full/sc_data.h5ad {params.download_link} > {log} 2>&1
+        wget -O results/data_full/sc_data.rds {params.download_link_data};
+        wget -O results/data_full/metadata.csv {params.download_link_metadata};
+        wget -O results/data_full/gene.csv {params.download_link_genes}
         """
 
-rule dataset_aggregating:
+rule dataset_subsetting:
     '''
     Generate datasets with different sizes.
     '''
     input:
-        anndata_file = 'results/data_full/sc_data.h5ad'
+        sc_data = 'results/data_full/sc_data.rds',
+        cell_annotation = 'results/data_full/metadata.csv',
+        genes_annotation = 'results/data_full/gene.csv'
     output:
-        sc_data = 'results/data_subsets/sc_data/sc_data_{dataset}.h5ad'
+        sc_data = 'results/data_subsets/sc_data/sc_data_{dataset}.rds'
     container:
-        "docker://agabriel/matk:dev"
-    params:
-        dataset = lambda wildcards: wildcards.dataset,
-        output_folder = "results/data_subsets/sc_data/"
+        "docker://agabriel/matk:gpu"
     log:
-        'logs/dataset_aggregating/dataset_aggregating_{dataset}.txt'
+        'logs/dataset_subsetting/dataset_subsetting_{dataset}.txt'
     shell:
         """
-        Rscript scripts/dataset_aggregating.r {input.anndata_file} {params.dataset} {params.output_folder} > {log} 2>&1
+        Rscript scripts/dataset_aggregating.r {input.sc_data} {input.genes_annotation} {input.cell_annotation} {wildcards.dataset} results/data_subsets/sc_data/ > {log} 2>&1
         """
 
-rule run_SuperCell:
+rule run_MATK:
     '''
-    Build metacells for each data subset using SuperCell.
+    Build metacells for each data data subset and using each metacell construction tool.
     '''
     input:
-        sc_data = 'results/data_subsets/sc_data/sc_data_{dataset}.h5ad'
+        sc_data = 'results/data_subsets/sc_data/sc_data_{dataset}.rds'
     output:
-        mc_data = 'results/data_subsets/mc_data/SuperCell/gamma{gamma}/{dataset}/mc_adata.h5ad',
-        SuperCell_benchmarks = 'benchmarks_time/gamma{gamma}_{dataset}_SuperCell.txt'
-    container:
-        "docker://agabriel/matk:dev"
-    params:
-        dataset = lambda wildcards: wildcards.dataset,
-        gamma = lambda wildcards: wildcards.gamma,
-        output_folder = 'results/data_subsets/mc_data/SuperCell/'
+        mc_data = 'results/{tool}/gamma{gamma}/{dataset}/mc_adata.h5ad',
+        MetaCell_benchmarks = 'results/benchmarks_time/gamma{gamma}_{dataset}_{tool}.txt'
+    container: "docker://agabriel/matk:gpu"
     benchmark:
-        "benchmarks/gamma{gamma}_{dataset}_SuperCell.txt"
+        'results/benchmarks/gamma{gamma}_{dataset}_{tool}.txt'
     log:
-        'logs/run_SuperCell/gamma{gamma}_{dataset}_SuperCell.txt'
+        'results/logs/run_MATK/gamma{gamma}_{dataset}_{tool}.txt'
+    threads:
+        lambda wildcards: 10 if wildcards.tool == "MetaCell_multithreads" else 1
+    params:
+        tool_name = lambda wildcards: config[wildcards.tool]["tool"],
+        matk_params = lambda wildcards: config[wildcards.tool]["MATK_params"]
+    resources:
+        mem_mb = lambda wildcards: config[wildcards.tool]["mem_mb"],
+        time = lambda wildcards: config[wildcards.tool]["time"],
+        partition = lambda wildcards: config[wildcards.tool]["partition"],
+        gpus = lambda wildcards: config[wildcards.tool]["gpus"]
     shell:
         """
-        mkdir -p benchmarks_time;
-        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_SuperCell.txt MATK -t SuperCell -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads} > {log} 2>&1
-        """
+        mkdir -p results/benchmarks_time;
+        /usr/bin/time -v -o results/benchmarks_time/gamma{wildcards.gamma}_{wildcards.dataset}_{wildcards.tool}.txt \
+            MATK -t {params.tool_name} \
+            -i results/data_subsets/sc_data/sc_data_{wildcards.dataset}.rds \
+            -o results/{wildcards.tool}/gamma{wildcards.gamma}/{wildcards.dataset}/ \
+            -g {wildcards.gamma} -s adata {params.matk_params} > {log} 2>&1
 
-rule run_SEACells:
-    '''
-    Build metacells for each data subset using SEACells.
-    '''
-    input:
-        sc_data = 'results/data_subsets/sc_data/sc_data_{dataset}.h5ad'
-    output:
-        mc_data = 'results/data_subsets/mc_data/SEACells/gamma{gamma}/{dataset}/mc_adata.h5ad',
-        SEACells_benchmarks = 'benchmarks_time/gamma{gamma}_{dataset}_SEACells.txt'
-    container:
-        "docker://agabriel/matk:dev"
-    params:
-        dataset = lambda wildcards: wildcards.dataset,
-        gamma = lambda wildcards: wildcards.gamma,
-        output_folder = 'results/data_subsets/mc_data/SEACells/'
-    benchmark:
-        "benchmarks/gamma{gamma}_{dataset}_SEACells.txt"
-    log:
-        'logs/run_SEACells/gamma{gamma}_{dataset}_SEACells.txt'
-    shell:
         """
-        mkdir -p benchmarks_time;
-        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_SEACells.txt MATK -t SEACells -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads} > {log} 2>&1
-        """
-
-rule run_MetaCell:
-    '''
-    Build metacells for each data subset using MetaCell.
-    '''
-    input:
-        sc_data = 'results/data_subsets/sc_data/sc_data_{dataset}.h5ad'
-    output:
-        mc_data = 'results/data_subsets/mc_data/MetaCell/gamma{gamma}/{dataset}/mc_adata.h5ad',
-        MetaCell_benchmarks = 'benchmarks_time/gamma{gamma}_{dataset}_MetaCell.txt'
-    container:
-        "docker://agabriel/matk:dev"
-    params:
-        dataset = lambda wildcards: wildcards.dataset,
-        gamma = lambda wildcards: wildcards.gamma,
-        output_folder = 'results/data_subsets/mc_data/MetaCell/'
-    benchmark:
-        "benchmarks/gamma{gamma}_{dataset}_MetaCell.txt"
-    log:
-        'logs/run_MetaCell/gamma{gamma}_{dataset}_MetaCell.txt'
-    shell:
-        """
-        mkdir -p benchmarks_time;
-        /usr/bin/time -v -o benchmarks_time/gamma{params.gamma}_{params.dataset}_MetaCell.txt MATK -t MetaCell -i results/data_subsets/sc_data/sc_data_{params.dataset}.h5ad -o {params.output_folder}gamma{params.gamma}/{params.dataset}/ -n 50 -f 2000 -k 30 -g {params.gamma} -s adata -a sample -l {threads} > {log} 2>&1
-        """
-
-# snakemake --snakefile Snakefile --profile configs/slurm/ --configfile configs/config.yaml
