@@ -1,0 +1,501 @@
+---
+title: "Illustration of datastes of different complexity (T cells and lung)"
+author: "Mariia Bilous"
+date: "2023-08-18"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Generate UMAPs and tSNEs of public datasets of different size and complexity
+
+```{r}
+library(Seurat)
+library(SeuratData)
+library(dplyr)
+library(SuperCell)
+library(ggplot2)
+
+dir.create("plots")
+```
+
+Parameters 
+```{r}
+N <- 5000 #number of cells to keep (to have the same number of cells in datasets of different complexity)
+
+w <- 5 # figures size for saving .pdf
+h <- 5 # figures size for saving .pdf
+```
+
+
+Get available datasets 
+```{r}
+available <- AvailableData()
+available
+```
+
+# Bone marrow dataset (Not used in its full size, only a subset of T cells used in figure)
+```{r bomemarrow dataset}
+InstallData("bmcite")
+seurat.bm <- bmcite
+```
+
+
+Standard pre-processing
+```{r}
+
+
+seurat.bm$celltype <- seurat.bm$celltype.l2
+
+seurat.bm$celltype[grepl(seurat.bm$celltype.l2,pattern = "CD8 Effector")] <- "CD8 Mature"
+seurat.bm$celltype[grepl(seurat.bm$celltype.l2,pattern = "CD8 Memory")] <- "CD8 Mature"
+seurat.bm$celltype[grepl(seurat.bm$celltype.l2,pattern = "Prog_B")] <- "Prog B"
+
+meta <- seurat.bm@meta.data
+
+seurat.bm <- CreateSeuratObject(seurat.bm@assays$RNA@counts)
+seurat.bm@meta.data <- meta
+seurat.bm <- NormalizeData(seurat.bm)
+seurat.bm <- FindVariableFeatures(seurat.bm,nfeatures = 3000)
+seurat.bm <- ScaleData(seurat.bm)
+seurat.bm <- RunPCA(seurat.bm,npcs = 50)
+seurat.bm <- FindNeighbors(seurat.bm, dims = 1:50)
+seurat.bm <- RunUMAP(seurat.bm, dims = 1:50)
+seurat.bm <- RunTSNE(seurat.bm, dims = 1:50)
+
+
+seurat.bm <- FindClusters(seurat.bm)
+
+p <- UMAPPlot(seurat.bm,group.by = "celltype") 
+
+p <- p + ggplot2::theme(asp = 1)
+p
+
+```
+```{r}
+ UMAPPlot(seurat.bm,group.by = "celltype") 
+```
+
+
+```{r}
+seurat.bm$num.celltype <- as.numeric(factor(seurat.bm$celltype))
+
+UMAPPlot(seurat.bm,group.by = "num.celltype") 
+```
+
+
+# Simple dataset -- T cells 
+Standard pre-processing
+```{r}
+set.seed(1)
+tcells.ids <- Cells(seurat.bm)[seurat.bm$celltype.l1 == 'T cell' & !(seurat.bm$celltype.l2 %in% c('gdT', 'MAIT', 'Treg'))]
+
+
+seurat.tcells <- subset(x = seurat.bm,  cells=tcells.ids)
+idx <- Cells(seurat.tcells)[sample(1:ncol(seurat.tcells), N, replace = FALSE)]
+
+seurat.tcells <- subset(x = seurat.tcells,  cells=idx)
+
+seurat.tcells <- FindVariableFeatures(seurat.tcells, nfeatures = 2000)
+seurat.tcells <- ScaleData(seurat.tcells)
+seurat.tcells <- RunPCA(seurat.tcells)
+seurat.tcells <- FindNeighbors(seurat.tcells)
+seurat.tcells <- FindClusters(seurat.tcells, resolution = 0.1)
+seurat.tcells <- RunUMAP(seurat.tcells, dims = 1:5)
+seurat.tcells <- RunTSNE(seurat.tcells, dims = 1:5)
+
+
+
+p <- UMAPPlot(seurat.tcells,group.by = "celltype") #, group.by = 'celltype.l2'
+p <- p + ggplot2::theme(asp = 1)
+p
+
+```
+```{r}
+#seurat.tcells$num.celltype <- as.numeric(factor(Idents(seurat.tcells)))
+
+UMAPPlot(seurat.tcells,group.by = "num.celltype") 
+```
+
+
+```{r}
+#gammas = c(1:20)*10 
+gammas  = c(1,seq(5,200,5))
+covered.celltypes <- data.frame()
+```
+
+# medium complexity CBMC
+
+```{r}
+InstallData("cbmc.SeuratData")
+data(cbmc)
+```
+
+
+
+```{r}
+cbmc <- UpdateSeuratObject(cbmc)
+cbmc <- cbmc[,!is.na(cbmc$protein_annotations)]
+cbmc <- cbmc[,!cbmc$protein_annotations == "T/Mono doublets"]
+cbmc <- cbmc[,!cbmc$rna_annotations == "T/Mono doublets"]
+
+idx <- Cells(cbmc)[sample(1:ncol(cbmc), N, replace = FALSE)]
+
+cbmc <- subset(x = cbmc,  cells=idx)
+
+
+cbmc <- NormalizeData(cbmc)
+cbmc <- FindVariableFeatures(cbmc,nfeatures = 2000)
+cbmc <- ScaleData(cbmc)
+cbmc <- RunPCA(cbmc,npcs = 50)
+cbmc <- FindNeighbors(cbmc, dims = 1:20)
+cbmc <- RunUMAP(cbmc, dims = 1:20)
+cbmc <- RunTSNE(cbmc, dims = 1:20)
+
+cbmc <- FindClusters(cbmc)
+
+p <- UMAPPlot(cbmc,group.by = "rna_annotations",label = T) 
+
+UMAPPlot(cbmc,group.by = "protein_annotations",label = T)
+
+p <- p + ggplot2::theme(asp = 1)
+p
+```
+```{r}
+UMAPPlot(cbmc,group.by = "seurat_clusters",label=T)
+```
+```{r}
+FeaturePlot(cbmc,c("KLRB1","CD14","FCGR3A","NKG7"))
+```
+
+
+```{r}
+unique(seurat.bm@meta.data[,c("celltype","num.celltype")])
+cbmc$num.celltype <- plyr::mapvalues(cbmc$rna_annotations,
+                                  from = unique(cbmc$rna_annotations),
+                                  to = c(22,16,21,11,8,3,7,2,15,1,17,4))
+```
+
+```{r}
+idx <- Cells(seurat.bm)[sample(1:ncol(seurat.bm), N, replace = FALSE)]
+
+seurat.bm.ss <- subset(x = seurat.bm,  cells=idx)
+#seurat.bm.ss <- RunUMAP(seurat.bm.ss, dims = 1:50)
+p <- UMAPPlot(seurat.bm.ss,group.by = "celltype")
+p <- p + ggplot2::theme(asp=1)
+p
+
+```
+```{r}
+UMAPPlot(cbmc,group.by = "rna_annotations")
+
+UMAPPlot(cbmc,group.by = "num.celltype")
+UMAPPlot(seurat.bm.ss,group.by = "num.celltype")
+UMAPPlot(seurat.bm.ss,group.by = "celltype")
+```
+
+```{r}
+MC <- SuperCell::SCimplify(Seurat::GetAssayData(cbmc, slot = "data"),  
+                           #k.knn = 30,
+                           gamma = 1,
+                           #n.var.genes = nb_var_genes,  
+                           n.pc = 20,
+                           genes.use = Seurat::VariableFeatures(cbmc), 
+                           return.hierarchical.structure = T
+)
+
+MC$cell_type <- supercell_assign(cbmc$rna_annotations,MC$membership,method = "absolute")
+
+for (g in gammas) {
+  MC.1 <- SuperCell::supercell_rescale(MC,gamma = g)
+  
+  MC.1$cell_type <- supercell_assign(cbmc$rna_annotations,MC.1$membership,method = "absolute")
+  covered.celltypes <- rbind(covered.celltypes,data.frame('dataset' = "CBMCs",
+                                                          "gamma" = g ,
+                                                          'N' = length(unique(MC.1$cell_type)),
+                                                          "percent.coverage" = length(unique(MC.1$cell_type))/length(unique(cbmc$rna_annotations))
+                                                          ))
+                                                          
+}
+
+covered.celltypes
+```
+
+
+
+
+```{r}
+MC <- SuperCell::SCimplify(Seurat::GetAssayData(seurat.bm, slot = "data"),  
+                           #k.knn = 30,
+                           gamma = 1,
+                           #n.var.genes = nb_var_genes,  
+                           n.pc = 50,
+                           genes.use = Seurat::VariableFeatures(seurat.bm), 
+                           return.hierarchical.structure = T
+)
+
+MC$cell_type <- supercell_assign(seurat.bm$celltype,MC$membership,method = "absolute")
+
+
+for (g in gammas) {
+  MC.1 <- SuperCell::supercell_rescale(MC,gamma = g)
+  
+  MC.1$cell_type <- supercell_assign(seurat.bm$celltype,MC.1$membership,method = "absolute")
+  covered.celltypes <- rbind(covered.celltypes,data.frame('dataset' = "Bone Marrow 30k",
+                                                          "gamma" = g ,
+                                                          'N' = length(unique(MC.1$cell_type)),
+                                                          "percent.coverage" = length(unique(MC.1$cell_type))/length(unique(seurat.bm$celltype))))
+}
+
+covered.celltypes
+```
+
+
+```{r}
+
+
+MC <- SuperCell::SCimplify(Seurat::GetAssayData(seurat.bm.ss, slot = "data"),  
+                           #k.knn = 30,
+                           gamma = 1,
+                           #n.var.genes = nb_var_genes,  
+                           n.pc = 50,
+                           genes.use = Seurat::VariableFeatures(seurat.bm.ss), 
+                           return.hierarchical.structure = T
+)
+
+MC$cell_type <- supercell_assign(seurat.bm.ss$celltype,MC$membership,method = "absolute")
+
+
+for (g in gammas) {
+  MC.1 <- SuperCell::supercell_rescale(MC,gamma = g)
+  
+  MC.1$cell_type <- supercell_assign(seurat.bm.ss$celltype,MC.1$membership,method = "absolute")
+  covered.celltypes <- rbind(covered.celltypes,data.frame('dataset' = "Bone Marrow",
+                                                          "gamma" = g ,
+                                                          'N' = length(unique(MC.1$cell_type)),
+                                                          "percent.coverage" = length(unique(MC.1$cell_type))/length(unique(seurat.bm.ss$celltype))))
+}
+
+covered.celltypes
+```
+
+
+
+```{r}
+
+MC <- SuperCell::SCimplify(Seurat::GetAssayData(seurat.tcells, slot = "data"),  
+                           #k.knn = 30,
+                           gamma = 1,
+                           #n.var.genes = nb_var_genes,  
+                           n.pc = 10,
+                           genes.use = Seurat::VariableFeatures(seurat.tcells), 
+                           return.hierarchical.structure = T
+)
+
+MC$cell_type <- supercell_assign(seurat.tcells$celltype,MC$membership,method = "absolute")
+
+for (g in gammas) {
+  MC.1 <- SuperCell::supercell_rescale(MC,gamma = g)
+  
+  MC.1$cell_type <- supercell_assign(seurat.tcells$celltype,MC.1$membership,method = "absolute")
+  covered.celltypes <- rbind(covered.celltypes,data.frame('dataset' = "T cells",
+                                                          "gamma" = g ,
+                                                          'N' = length(unique(MC.1$cell_type)),
+                                                          "percent.coverage" = length(unique(MC.1$cell_type))/length(unique(seurat.tcells$celltype))))
+}
+
+covered.celltypes
+```
+
+```{r}
+covered.celltypes.complexity <- ggplot(covered.celltypes[covered.celltypes$dataset %in% c("Bone Marrow","CBMCs","T cells"),],aes(x=gamma,y=N,col = dataset,group = dataset)) + geom_line() + scale_x_continuous( breaks=c(1,50,100,150,200)) + theme_classic() +ylab("N cell types covered")
+
+covered.celltypes.complexity
+```
+
+
+# same for size, BM dataset
+
+```{r}
+#   seurat.bm <- RunTSNE(seurat.bm,dims = 1:50)
+sizes <- c(ncol(seurat.bm),5000,1000)
+covered.celltypes.size <- data.frame()
+#data.tsne <- data.frame()
+data.umap <- data.frame()
+covered.celltypes.size <- data.frame()
+
+for (s in sizes) {
+  N <- s
+  if(s == 1000) {
+    idx <- Cells(seurat.bm)[sample(1:ncol(seurat.bm), N, replace = FALSE)]
+    
+    sobj <- subset(x = seurat.bm,  cells=idx)
+  }
+  if(s == 5000) {
+    sobj = seurat.bm.ss
+  } 
+  
+  if(s == ncol(seurat.bm)) {
+    sobj = seurat.bm
+  }
+  
+  # tsne.plot <- TSNEPlot(sobj,group.by = "seurat_clusters")
+  # tsne.plot$data$size = s
+  # data.tsne <- rbind(data.tsne,tsne.plot$data)
+  umap.plot <- UMAPPlot(sobj,group.by = "celltype")
+  umap.plot$data$size = s
+  data.umap <- rbind(data.umap,umap.plot$data)
+  
+  MC <- SuperCell::SCimplify(Seurat::GetAssayData(sobj, slot = "data"),  
+                             #k.knn = 30,
+                             gamma = 1,
+                             #n.var.genes = nb_var_genes,  
+                             n.pc = 50,
+                             genes.use = Seurat::VariableFeatures(sobj), 
+                             return.hierarchical.structure = T
+  )
+  
+  MC$cell_type <- supercell_assign(sobj$celltype,MC$membership,method = "absolute")
+  
+  
+  for (g in gammas) {
+    MC.1 <- SuperCell::supercell_rescale(MC,gamma = g)
+    
+    MC.1$cell_type <- supercell_assign(sobj$celltype,MC.1$membership,method = "absolute")
+    covered.celltypes.size <- rbind(covered.celltypes.size,data.frame('dataset' = "Bone Marrow",
+                                                                      "gamma" = g ,
+                                                                      "size" = N ,
+                                                                      'N' = length(unique(MC.1$cell_type)),
+                                                                      "percent.coverage" = length(unique(MC.1$cell_type))/length(unique(sobj$celltype))
+                                                                     ))
+  }
+  
+  
+}
+```
+
+```{r}
+covered.celltypes.size$size0 <- covered.celltypes.size$size
+covered.celltypes.size$size <- factor(paste0(as.character(floor(covered.celltypes.size$size/1000)),"k"),levels = c("30k","5k","1k"))
+covered.celltypes.size.percent.bm <- ggplot(covered.celltypes.size,aes(x=gamma,y=percent.coverage,col = size,group = size)) + geom_point() + geom_line() + scale_x_continuous( breaks=c(1,50,100,150)) + theme_classic() + ylab("covered cell types") + scale_y_continuous(labels = scales::percent)
+covered.celltypes.size.percent.bm
+```
+```{r}
+covered.celltypes.size.bm <- ggplot(covered.celltypes.size,aes(x=gamma,y=N,col = size,group = size))  + geom_line() + scale_x_continuous( breaks=c(1,50,100,150,200)) + theme_classic() +ylab("N cell types covered")
+
+covered.celltypes.size.bm
+```
+
+
+```{r fig.height=1,fig.width=4}
+data.umap$dataset<- factor(paste0(as.character(floor(data.umap$size/1000)),"k"),levels = rev(c("30k","5k","1k"))) 
+
+#umap_1/2 is in lower case in seurat_v5
+bm.plots <- ggplot(data.umap,aes(x= umap_1,y= umap_2,col = celltype)) + facet_wrap("~dataset") + geom_point(size = 0.1) + theme_classic() + NoLegend()    + 
+    theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),
+          plot.title = element_blank()) 
+
+cowplot::plot_grid(bm.plots,covered.celltypes.size.bm,rel_widths = c(3,1.5),nrow = 1)
+```
+```{r}
+final.colors <- c('#E5D2DD', '#53A85F', '#F1BB72', '#F3B1A0', '#D6E7A3', '#57C3F3', '#476D87',
+                '#E95C59', '#AB3282', '#BD956A', '#8C549C', '#585658',
+                '#9FA3A8', '#E0D4CA', '#5F3D69', '#58A4C3', "#b20000",'#E4C755', '#F7F398',
+                '#AA9A59', '#E63863', '#E39A35', '#C1E6F3', '#6778AE', '#91D0BE', '#B53E2B',
+                '#712820', '#DCC1DD', '#CCE0F5', '#CCC9E6', '#625D9E', '#68A180', '#3A6963',
+                '#968175')[1:23]
+names(final.colors) <- unique((seurat.bm.ss$num.celltype))[1:23]
+
+final.colors.2 <- final.colors
+
+
+UMAPPlot(seurat.bm.ss,group.by = "num.celltype",cols = final.colors[],label =T)
+
+final.colors.2["1"] <- final.colors["15"]
+final.colors.2["15"] <- final.colors["1"]
+
+final.colors.2["2"] <- final.colors["6"]
+final.colors.2["6"] <- final.colors["2"]
+final.colors.2["19"] <- final.colors["14"]
+final.colors.2["14"] <- final.colors["19"]
+
+final.colors.2["21"] <- final.colors["18"]
+final.colors.2["18"] <- final.colors["21"]
+
+final.colors.2["11"] <- final.colors["9"]
+final.colors.2["9"] <- final.colors["11"]
+
+# final.colors.2["22"] <- final.colors["13"]
+# final.colors.2["13"] <- final.colors["22"]
+
+
+UMAPPlot(seurat.bm.ss,group.by = "num.celltype",cols = final.colors.2,label =T)
+UMAPPlot(cbmc,group.by = "num.celltype",cols = final.colors.2,label =T)
+
+```
+
+```{r fig.height=1,fig.width=4}
+data.dim.red.complexity = data.frame()
+
+
+umap.tcells <- UMAPPlot(seurat.tcells,group.by="num.celltype")
+umap.tcells$data$dataset <- "T cells"
+colnames(umap.tcells$data)[c(1,2)] <- c('Component_1','Component_2')
+
+umap.bm.ss <- UMAPPlot(seurat.bm.ss,group.by="num.celltype")
+umap.bm.ss$data$dataset <- "Bone Marrow"
+colnames(umap.bm.ss$data)[c(1,2)] <- c('Component_1','Component_2')
+
+
+
+# umap.cbmc <- UMAPPlot(cbmc,group.by="num.celltype")
+# umap.cbmc$data$dataset <- "CBMCs"
+
+tsne.cbmc <- TSNEPlot(cbmc,group.by="num.celltype")
+tsne.cbmc$data$dataset <- "CBMCs"
+colnames(tsne.cbmc$data)[c(1,2)] <- c('Component_1','Component_2')
+
+
+data.dim.red.complexity <- rbind(umap.tcells$data,tsne.cbmc$data,umap.bm.ss$data)
+
+data.dim.red.complexity$dataset<- factor(data.dim.red.complexity$dataset,levels = c("T cells","CBMCs","Bone Marrow"))
+
+#umap_1/2 is in lower case in seurat_v5
+dim.red.complexity.plots <- ggplot(data.dim.red.complexity,aes(x= Component_1,y= Component_2,col = num.celltype)) + facet_wrap("~dataset",scales = "free") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = final.colors.2)   + 
+    theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),
+          plot.title = element_blank()) 
+
+cowplot::plot_grid(dim.red.complexity.plots,covered.celltypes.complexity,rel_widths = c(3,1.5))
+```
+
+
+#Final Plot
+```{r}
+data.umap.size <- data.umap
+data.umap.size$Size <- NULL
+data.umap.size$size <- NULL
+data.umap.size$num.celltype <- as.numeric(factor(data.umap.size$celltype))
+data.umap.size$celltype <- NULL
+colnames(data.umap.size)[c(1,2)] <- c("Component_1","Component_2")
+
+
+all.dim.reds <- ggplot(rbind(data.umap.size,dim.red.complexity.plots$data),aes(x= Component_1,y= Component_2,col = num.celltype)) + facet_wrap("~dataset",scales = "free") + geom_point(size = 0.1) + theme_classic() + NoLegend() + scale_color_manual(values = final.colors.2)   + 
+    theme(panel.border = element_rect(colour = "black", fill=NA), axis.ticks = element_blank(),axis.text = element_blank(),axis.title = element_blank(),
+          plot.title = element_blank()) 
+
+all.dim.reds
+```
+
+```{r fig.height=1.5,fig.width=3.5}
+library(cowplot)
+
+plot_grid(all.dim.reds,plot_grid(covered.celltypes.size.bm + theme(legend.justification = c(0,1)),covered.celltypes.complexity+ theme(legend.justification = c(0,1)),ncol = 1,align = "v"),rel_widths = c(3,1.8))
+
+ggplot2::ggsave(filename = "plots/complexity_size_fig2.pdf", width = 8,height = 3.5,units = "in")
+
+```
+
+
+
+
