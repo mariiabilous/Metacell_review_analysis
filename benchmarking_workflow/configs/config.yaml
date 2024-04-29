@@ -1,0 +1,65 @@
+description: |
+ Config file for the benchmarking pipeline
+
+data:
+  data_link_mouse: 'https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/gene_count_cleaned.RDS'
+  annotation_link_mouse: 'https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/cell_annotate.csv'
+  genes_link_mouse: 'https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/gene_annotate.csv'
+
+SuperCell:
+  tool: "SuperCell"
+  MATK_params: "-n 50 -f 2000 -k 30"
+  mem_mb: 500000
+  time: 1200
+  partition: 'cpu'
+  gpus: 0
+SuperCell_approx:
+  tool: "SuperCell"
+  MATK_params: "-n 50 -f 2000 -k 30 -x -c 50000"
+  mem_mb: 500000
+  time: 360
+  partition: 'cpu'
+  gpus: 0
+SEACells:
+  tool: "SEACells"
+  MATK_params: "-n 50 -f 2000 -k 30 -e 1e-3"
+  mem_mb: 500000
+  time: 1200
+  partition: 'cpu'
+  gpus: 0
+SEACells_gpu:
+  tool: "SEACells"
+  MATK_params: "-n 50 -f 2000 -k 30 -u -e 1e-3"
+  mem_mb: 500000
+  time: 1200
+  partition: 'gpu'
+  gpus: 1
+MetaCell:
+  tool: "MetaCell"
+  MATK_params: ""
+  mem_mb: 500000
+  time: 360
+  partition: 'cpu'
+  gpus: 0
+MetaCell_multithreads:
+  tool: "MetaCell"
+  MATK_params: ""
+  mem_mb: 500000
+  time: 360
+  partition: 'cpu'
+  gpus: 0
+run_MATK_per_sample:
+  mem_mb: 300000
+  time: 1200
+  partition: 'cpu'
+  gpus: 0
+run_downstream_analysis:
+  mem_mb: 300000
+  time: 1200
+  partition: 'cpu'
+  gpus: 0
+run_MATK_per_sample_downstream:
+  mem_mb: 300000
+  time: 1200
+  partition: 'cpu'
+  gpus: 0
